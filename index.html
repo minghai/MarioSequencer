@@ -4,13 +4,13 @@
 <title>Test Project</title>
 </head>
 <body>
-<div>
+<button onclick="playSound(buf['mario'], 0)">Play</button>
+<div width="512" height="448">
  <canvas id="layer1" width="512" height="448" 
    style="position: absolute; left: 0; top: 0; z-index: 0;"></canvas>
  <canvas id="layer2" width="512" height="448" 
    style="position: absolute; left: 0; top: 0; z-index: 1;"></canvas>
 </div>
-<button onclick="playSound(buf['mario'], 0);">Play</button>
 <script src="shared.js"></script>
 <script>
 var buf = {};
