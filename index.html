@@ -2,22 +2,27 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <title>Test Project</title>
+<style>
+.game {
+  margin:0; padding:0; border:0;
+  left:0; top:0;
+}
+</style>
 </head>
 <body>
-<button onclick="playSound(buf['mario'], 0)">Play</button>
-<!--
-<div width="512" height="448">
- <canvas id="layer1" width="512" height="448" 
-   style="position: absolute; left: 0; top: 0; z-index: 0;"></canvas>
- <canvas id="layer2" width="512" height="448" 
-   style="position: absolute; left: 0; top: 0; z-index: 1;"></canvas>
+<button onclick="se.play(0)">Play</button>
+<div id="console"
+  style="position: relative; margin:0; padding:0; border:0;">
+ <canvas id="layer1" width="768" height="672" class="game"
+   style="position: static; z-index: 0; opacity:1"></canvas>
+ <canvas id="layer2" width="768" height="672" class="game"
+   style="position: absolute; z-index: 1;"></canvas>
 </div>
--->
 <script src="shared.js"></script>
 <script>
 var buf = {};
-var sm = {'mario':'wav/sound01.wav'};
-loadSounds(buf, sm);
+se = new SoundEntity('mario', 'wav/sound01.wav');
+se.load();
 </script>
 </body>
 </html>
