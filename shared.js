@@ -8,6 +8,7 @@ MOUSEX = 0;
 MOUSEY = 0;
 OFFSETLEFT = 0;
 OFFSETTOP = 0;
+CURRENTCHAR = 0;
 
 // shim layer with setTimeout fallback
 window.requestAnimFrame = (function(){
@@ -133,6 +134,19 @@ function drawBomb(mySelf) {
   }
 }
 
+function changeCursor(num) {
+  SCREEN.style.cursor = 'url(' + SOUNDS[num].canvas.toDataURL() + ')' + HALFCHARSIZE +' '+ HALFCHARSIZE + ', auto';
+}
+
+function drawCurrentChar(canvas) {
+  var x = 4 * MAGNIFY;
+  var y = 7 * MAGNIFY;
+  L1C.clearRect(x, y, CHARSIZE, CHARSIZE);
+  L1C.drawImage(canvas, x, y);
+  L1C.fillRect(x, y, CHARSIZE, MAGNIFY);
+  L1C.fillRect(x, y + CHARSIZE - MAGNIFY, CHARSIZE, MAGNIFY);
+}
+
 SCREEN = document.getElementById("layer2");
 L2C = SCREEN.getContext('2d');
 L2C.lastMouseX = 0;
@@ -144,7 +158,6 @@ SCREEN.addEventListener("click", function(e) {
   console.log("sy = " + e.screenY);
   console.log("left = " + CONSOLE.offsetLeft);
   console.log("Top  = " + CONSOLE.offsetTop);
-  SCREEN.style.cursor = 'url(' + SOUNDS[0].canvas.toDataURL() + ')' + HALFCHARSIZE +' '+ HALFCHARSIZE + ', auto';
 });
 SCREEN.addEventListener("mousemove", function(e) {
   MOUSEX = e.clientX;
@@ -161,24 +174,6 @@ function doAnimation(time) {
   var height = (148 - 41 + 1) * MAGNIFY;
   var realX = MOUSEX - OFFSETLEFT;
   var realY = MOUSEY - OFFSETTOP;
-  if (!(L2C.lastMouseX == realX && L2C.lastMouseY == realY) &&
-      (x < realX && realX < 247 * MAGNIFY) &&
-      (y < realY && realY < 148 * MAGNIFY))
-  {
-    L2C.save();
-    L2C.rect(x, y, width, height);
-    L2C.clip();
-    L2C.clearRect(L2C.lastMouseX - HALFCHARSIZE,
-        L2C.lastMouseY - HALFCHARSIZE,
-        CHARSIZE,
-        CHARSIZE);
-    L2C.drawImage(SOUNDS[0].canvas,
-      realX - HALFCHARSIZE,
-      realY - HALFCHARSIZE);
-    L2C.restore();
-    L2C.lastMouseX = realX;
-    L2C.lastMouseY = realY;
-  }
 
   // Bomb
   bombTimer.checkAndFire(time);
@@ -196,6 +191,7 @@ function onload() {
   var i = 0;
   for (i = 0; i < 15; i++) {
     var b = document.createElement("button");
+    b.num = i;
     b.className = "game";
     b.style.position = 'absolute';
     b.style.left = (24 + 14 * i) * MAGNIFY + "px";
@@ -215,15 +211,15 @@ function onload() {
     b.se.canvas = tmpc;
     b.addEventListener("click", function() {
       this.se.play(0);
-      var x = 4 * MAGNIFY;
-      var y = 7 * MAGNIFY;
-      L1C.clearRect(x, y, CHARSIZE, CHARSIZE);
-      L1C.drawImage(this.se.canvas, x, y);
-      L1C.fillRect(x, y, CHARSIZE, MAGNIFY);
-      L1C.fillRect(x, y + CHARSIZE - MAGNIFY, CHARSIZE, MAGNIFY);
+      CURRENTCHAR = this.num;
+      changeCursor(this.num);
+      drawCurrentChar(this.se.canvas);
     });
     CONSOLE.appendChild(b);
   }
+  CURRENTCHAR = 0;
+  drawCurrentChar(SOUNDS[0].canvas);
+  changeCursor(0);
 
   for (i = 0; i < 3; i++) {
     var tmpc = document.createElement("canvas");
