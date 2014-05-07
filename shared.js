@@ -6,13 +6,14 @@ CHARSIZE = 16 * MAGNIFY;
 HALFCHARSIZE = Math.floor(CHARSIZE / 2);
 MOUSEX = 0;
 MOUSEY = 0;
-OFFSETLEFT = 0;
-OFFSETTOP = 0;
+CONSOLE = document.getElementById("console");
+OFFSETLEFT = CONSOLE.offsetLeft;
+OFFSETTOP  = CONSOLE.offsetTop;
 CURRENTCHAR = 0;
 
 // shim layer with setTimeout fallback
 window.requestAnimFrame = (function(){
-return  window.requestAnimationFrame       || 
+return  window.requestAnimationFrame || 
   window.webkitRequestAnimationFrame || 
   window.mozRequestAnimationFrame    || 
   window.oRequestAnimationFrame      || 
@@ -22,7 +23,7 @@ return  window.requestAnimationFrame       ||
 };
 })();
 
-// constructor
+// SoundEntity#constructor
 function SoundEntity(name, path) {
   this.name = name;
   this.path = path;
@@ -88,6 +89,7 @@ easyTimer.prototype.checkAndFire = function(time) {
   }
 };
 
+// Asynchronous load of sounds
 SOUNDS = [];
 for (i = 1; i < 17; i++) {
   var tmp = '0';
@@ -101,6 +103,7 @@ for (i = 1; i < 17; i++) {
 // Prepare Mat
 MAT = document.getElementById("layer1");
 L1C = MAT.getContext('2d');
+L1C.imageSmoothingEnabled = false;
 var mi = new Image();
 mi.src = "image/mat.png";
 mi.addEventListener("load", function(e) {
@@ -134,21 +137,58 @@ function drawBomb(mySelf) {
   }
 }
 
-function changeCursor(num) {
-  SCREEN.style.cursor = 'url(' + SOUNDS[num].canvas.toDataURL() + ')' + HALFCHARSIZE +' '+ HALFCHARSIZE + ', auto';
+// Prepare the G-Clef. (x, y) = (9, 48)
+gclef = new Image();
+gclef.src = "image/G_Clef.png";
+
+// ClipRect (8, 41) to (247, 148)
+function drawScore(pos, notes) {
+  L2C.clearRect(0, 0, L2C.width, L2C.height);
+  if (pos == 0) {
+    var w = gclef.width;
+    var h = gclef.height;
+    L2C.drawImage(gclef,
+      0, 0, w, h,
+      9 * MAGNIFY, 48 * MAGNIFY, w * MAGNIFY, h * MAGNIFY);
+  }
+
+  //ORANGE #F89000
+  var i = (pos < 2) ? (2 - pos) : 0;
+  var dashList = [MAGNIFY, MAGNIFY];
+  for (; i < 8; i++) {
+    L2C.beginPath();
+    L2C.setLineDash(dashList);
+    L2C.lineWidth = MAGNIFY;
+    L2C.strokeStyle = (i % 4 == 2) ? '#F89000' : '#A0C0B0';
+    L2C.moveTo((16 + 32 * i) * MAGNIFY, 41 * MAGNIFY);
+    L2C.lineTo((16 + 32 * i) * MAGNIFY, 148 * MAGNIFY);
+    L2C.stroke();
+  }
 }
 
-function drawCurrentChar(canvas) {
+
+function changeCursor(num) {
+  SCREEN.style.cursor = 'url(' + SOUNDS[num].image.src + ')' + HALFCHARSIZE +' '+ HALFCHARSIZE + ', auto';
+}
+
+function drawCurrentChar(image) {
   var x = 4 * MAGNIFY;
   var y = 7 * MAGNIFY;
+  L1C.beginPath();
+  L1C.imageSmoothingEnabled = false;
   L1C.clearRect(x, y, CHARSIZE, CHARSIZE);
-  L1C.drawImage(canvas, x, y);
+  L1C.drawImage(image, x, y);
   L1C.fillRect(x, y, CHARSIZE, MAGNIFY);
   L1C.fillRect(x, y + CHARSIZE - MAGNIFY, CHARSIZE, MAGNIFY);
 }
 
 SCREEN = document.getElementById("layer2");
+// You should not use .style.width(or height) here.
+// You must not append "px" here.
+SCREEN.width  = 256 * MAGNIFY;
+SCREEN.height = 148 * MAGNIFY;
 L2C = SCREEN.getContext('2d');
+L2C.imageSmoothingEnabled = false;
 L2C.lastMouseX = 0;
 L2C.lastMouseY = 0;
 SCREEN.addEventListener("click", function(e) {
@@ -166,7 +206,6 @@ SCREEN.addEventListener("mousemove", function(e) {
 
 
 
-// ClipRect (8, 41) to (247, 148)
 function doAnimation(time) {
   var x = 8 * MAGNIFY;
   var y = 41 * MAGNIFY;
@@ -184,12 +223,12 @@ function doAnimation(time) {
 // 1st mario:   x=24, y=8, width=13, height=14
 // 2nd Kinopio: X=38, y=8, width=13, height=14
 
+window.addEventListener("load", onload);
 function onload() {
-  CONSOLE = document.getElementById("console");
-  OFFSETLEFT = CONSOLE.offsetLeft;
-  OFFSETTOP  = CONSOLE.offsetTop;
-  var i = 0;
-  for (i = 0; i < 15; i++) {
+
+  // Make buttons for changing a kind of notes.
+  var bimgs = sliceImage(char_sheet, 16, 16);
+  for (var i = 0; i < 15; i++) {
     var b = document.createElement("button");
     b.num = i;
     b.className = "game";
@@ -202,35 +241,85 @@ function onload() {
     b.style.background = "rgba(0,0,0,0)";
     
     b.se = SOUNDS[i];
-    var tmpc = document.createElement("canvas");
-    tmpc.width  = CHARSIZE;
-    tmpc.height = CHARSIZE;
-    tmpc.getContext('2d').drawImage(char_sheet,
-        (i % 8) * 16, Math.floor(i / 8) * 16, 16, 16,
-        0, 0, CHARSIZE, CHARSIZE);
-    b.se.canvas = tmpc;
+    b.se.image = bimgs[i];
     b.addEventListener("click", function() {
       this.se.play(0);
       CURRENTCHAR = this.num;
       changeCursor(this.num);
-      drawCurrentChar(this.se.canvas);
+      drawCurrentChar(this.se.image);
     });
     CONSOLE.appendChild(b);
   }
-  CURRENTCHAR = 0;
-  drawCurrentChar(SOUNDS[0].canvas);
-  changeCursor(0);
 
-  for (i = 0; i < 3; i++) {
-    var tmpc = document.createElement("canvas");
-    tmpc.width = 14 * MAGNIFY;
-    tmpc.height = 18 * MAGNIFY;
-    tmpc.getContext('2d').drawImage(bombimg,
-      (i % 8) * 14, 0, 14, 18, 0, 0, 14*MAGNIFY, 18*MAGNIFY);
-    BOMBS[i] = tmpc;
-  }
+  // Initializing Screen
+  CURRENTCHAR = 0;
+  drawCurrentChar(SOUNDS[0].image);
+  changeCursor(0);
+  drawScore(0);
+
+  // Make canvases from bomb images
+  BOMBS = sliceImage(bombimg, 14, 18);
+
+  // Prepare Scroll Range
+  var r = document.createElement('input');
+  r.id = 'scroll';
+  r.type = 'range';
+  r.style['-webkit-appearance']='none';
+  r.style['border-radius'] = '0px';
+  r.style['background-color'] = '#F8F8F8';
+  r.style['box-shadow'] = 'inset 0 0 0 #000';
+  r.style['vertical-align'] = 'middle';
+  r.style.position = 'absolute';
+  r.style.margin = 0;
+  r.style.left = 191 * MAGNIFY + 'px';
+  r.style.top  = 159 * MAGNIFY + 'px';
+  r.style.width = 50 * MAGNIFY + 'px';
+  r.style.height = 7 * MAGNIFY + 'px';
+  CONSOLE.appendChild(r);
+
+  // It's very hard to set values to a pseudo element with JS.
+  // http://pankajparashar.com/posts/modify-pseudo-elements-css/
+  var s = document.createElement("style");
+  document.head.appendChild(s);
+  s.sheet.addRule('#scroll::-webkit-slider-thumb',
+	  "-webkit-appearance: none !important;" +
+	  "border-radius: 0px;" +
+	  "background-color: #A870D0;" +
+	  "box-shadow:inset 0 0 0px;" +
+	  "border: 0px;" +
+	  "width: " + 5 * MAGNIFY + "px;" +
+	  "height:" + 7 * MAGNIFY + "px;"
+  );
+  s.sheet.addRule('#scroll:focus', 'outline: none !important;');
 
   requestAnimFrame(doAnimation);
 }
 
-window.addEventListener("load", onload);
+// sliceImage(img, width, height)
+//   img: Image of the sprite sheet
+//   width: width of the Character
+//   height: height of the Charactter
+function sliceImage(img, width, height) {
+  var result = [];
+  var imgw = img.width * MAGNIFY;
+  var imgh = img.height * MAGNIFY;
+  var num = Math.floor(img.width / width);
+  var all = num * Math.floor(img.height / height);
+  var charw = width  * MAGNIFY;
+  var charh = height * MAGNIFY;
+
+  for (var i = 0; i < all; i++) {
+    var tmpcan = document.createElement("canvas");
+    tmpcan.width  = charw;
+    tmpcan.height = charh;
+    var tmpctx = tmpcan.getContext('2d');
+    tmpctx.imageSmoothingEnabled = false;
+    tmpctx.drawImage(img,
+      (i % num) * width, Math.floor(i / num) * height,
+      width, height, 0, 0, charw, charh);
+    var charimg = new Image();
+    charimg.src = tmpcan.toDataURL();
+    result[i] = charimg;
+  }
+  return result;
+}
