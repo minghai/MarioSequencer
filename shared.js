@@ -9,7 +9,10 @@ MOUSEY = 0;
 CONSOLE = document.getElementById("console");
 OFFSETLEFT = CONSOLE.offsetLeft;
 OFFSETTOP  = CONSOLE.offsetTop;
-CURRENTCHAR = 0;
+CurChar = 0;
+CurPos = 0;
+CurScore = {};
+CurMaxBars = 24 * 4 + 1;
 
 // shim layer with setTimeout fallback
 window.requestAnimFrame = (function(){
@@ -153,16 +156,27 @@ function drawScore(pos, notes) {
   }
 
   //ORANGE #F89000
-  var i = (pos < 2) ? (2 - pos) : 0;
   var dashList = [MAGNIFY, MAGNIFY];
+  // orange = 2, 1, 0, 3, 2, 1, 0, 3, .....
+  var orange = 3 - ((pos + 1) % 4);
+  var i = (pos < 2) ? (2 - pos) : 0;
   for (; i < 8; i++) {
     L2C.beginPath();
     L2C.setLineDash(dashList);
     L2C.lineWidth = MAGNIFY;
-    L2C.strokeStyle = (i % 4 == 2) ? '#F89000' : '#A0C0B0';
-    L2C.moveTo((16 + 32 * i) * MAGNIFY, 41 * MAGNIFY);
-    L2C.lineTo((16 + 32 * i) * MAGNIFY, 148 * MAGNIFY);
+    L2C.strokeStyle = (i % 4 == orange) ? '#F89000' : '#A0C0B0';
+    var x = (16 + 32 * i) * MAGNIFY;
+    L2C.moveTo(x,  41 * MAGNIFY);
+    L2C.lineTo(x, 148 * MAGNIFY);
     L2C.stroke();
+
+    var b = notes[pos + i - 2];
+    for (var j = 0; j < b.length; j++) {
+      var sndnum = b[j] >> 8;
+      var scale  = b[j] & 0x0F;
+      L2C.drawImage(SOUNDS[sndnum].image, x - 8 * MAGNIFY,
+        (40 + scale * 8) * MAGNIFY);
+    }
   }
 }
 
@@ -171,7 +185,7 @@ function changeCursor(num) {
   SCREEN.style.cursor = 'url(' + SOUNDS[num].image.src + ')' + HALFCHARSIZE +' '+ HALFCHARSIZE + ', auto';
 }
 
-function drawCurrentChar(image) {
+function drawCurChar(image) {
   var x = 4 * MAGNIFY;
   var y = 7 * MAGNIFY;
   L1C.beginPath();
@@ -186,19 +200,45 @@ SCREEN = document.getElementById("layer2");
 // You should not use .style.width(or height) here.
 // You must not append "px" here.
 SCREEN.width  = 256 * MAGNIFY;
-SCREEN.height = 148 * MAGNIFY;
+SCREEN.height = 151 * MAGNIFY;
 L2C = SCREEN.getContext('2d');
 L2C.imageSmoothingEnabled = false;
 L2C.lastMouseX = 0;
 L2C.lastMouseY = 0;
+// ClipRect (8, 41) to (247, 148)
 SCREEN.addEventListener("click", function(e) {
-  console.log("x = " + e.clientX);
-  console.log("y = " + e.clientY);
-  console.log("sx = " + e.screenX);
-  console.log("sy = " + e.screenY);
-  console.log("left = " + CONSOLE.offsetLeft);
-  console.log("Top  = " + CONSOLE.offsetTop);
+  var realX = e.clientX - OFFSETLEFT;
+  var realY = e.clientY - OFFSETTOP;
+  var gridLeft   = (8   + 4) * MAGNIFY;
+  var gridTop    = (41     ) * MAGNIFY;
+  var gridRight  = (247 - 4) * MAGNIFY;
+  var gridBottom = (148 - 4) * MAGNIFY;
+  if (realX < gridLeft || realX > gridRight ||
+      realY < gridTop  || realY > gridBottom)
+    return;
+
+  var gridX = Math.floor((realX - gridLeft) / CHARSIZE);
+  if (gridX % 2 != 0) return; // Not near the bar
+  gridX /= 2;
+  var gridY = Math.floor((realY - gridTop) / HALFCHARSIZE);
+
+  // Consider G-Clef and repeat head area
+  if (CurPos == 0 && gridX < 2 || CurPos == 1 && gridX == 0)
+    return;
+
+  // Map logical x to real bar number
+  var b = CurPos + gridX - 2;
+
+  // Handle semitone
+  if (e.shiftKey) gridY |= 0x80;
+  if (e.ctrlKey ) gridY |= 0x40;
+  var note = (CurChar << 8) | gridY;
+  var notes = CurScore['notes'][b];
+  if (notes.indexOf(note) != -1) return;
+  notes.push(note);
+  CurScore['notes'][b] = notes;
 });
+
 SCREEN.addEventListener("mousemove", function(e) {
   MOUSEX = e.clientX;
   MOUSEY = e.clientY;
@@ -216,6 +256,8 @@ function doAnimation(time) {
 
   // Bomb
   bombTimer.checkAndFire(time);
+
+  drawScore(CurPos, CurScore['notes']);
 
   requestAnimFrame(doAnimation);
 }
@@ -244,20 +286,26 @@ function onload() {
     b.se.image = bimgs[i];
     b.addEventListener("click", function() {
       this.se.play(0);
-      CURRENTCHAR = this.num;
+      CurChar = this.num;
       changeCursor(this.num);
-      drawCurrentChar(this.se.image);
+      drawCurChar(this.se.image);
     });
     CONSOLE.appendChild(b);
   }
 
-  // Initializing Screen
-  CURRENTCHAR = 0;
-  drawCurrentChar(SOUNDS[0].image);
-  changeCursor(0);
-  drawScore(0);
+  // Prepare current empty score
+  var tmpa = [];
+  for (var i = 0; i < CurMaxBars; i++) tmpa[i] = [];
+  CurScore['notes'] = tmpa;
 
-  // Make canvases from bomb images
+  // Initializing Screen
+  CurPos = 0;
+  CurChar = 0;
+  drawCurChar(SOUNDS[CurChar].image);
+  changeCursor(CurChar);
+  drawScore(CurPos, CurScore['notes']);
+
+  // Make bomb images from the bomb sheet
   BOMBS = sliceImage(bombimg, 14, 18);
 
   // Prepare Scroll Range
@@ -292,6 +340,7 @@ function onload() {
   );
   s.sheet.addRule('#scroll:focus', 'outline: none !important;');
 
+  // Start Animation
   requestAnimFrame(doAnimation);
 }
 
