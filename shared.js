@@ -12,7 +12,7 @@ OFFSETTOP  = CONSOLE.offsetTop;
 CurChar = 0;
 CurPos = 0;
 CurScore = {};
-CurMaxBars = 24 * 4 + 1;
+CurMaxBars = 24 * 4;
 
 // shim layer with setTimeout fallback
 window.requestAnimFrame = (function(){
@@ -36,14 +36,14 @@ function SoundEntity(name, path) {
 }
 
 // SoundEntity#play
-SoundEntity.prototype.play = function(time) {
+SoundEntity.prototype.play = function(scale) {
+  var diff = [14, 12, 11, 9, 7, 6, 4, 2, 0, -1, -3, -5, -6];
   var source = AC.createBufferSource();
-  this.semitone += this.delta;
-  if (Math.abs(this.semitone) == 12) this.delta *= -1;
+  var semitone = diff[scale];
   source.buffer = this.buffer;
-  source.playbackRate.value = Math.pow(SEMITONERATIO, this.semitone);
+  source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
   source.connect(AC.destination);
-  source.start(time);
+  source.start(0);
 };
 
 SoundEntity.prototype.load = function() {
@@ -144,9 +144,21 @@ function drawBomb(mySelf) {
 gclef = new Image();
 gclef.src = "image/G_Clef.png";
 
+// Prepare the numbers
+numimg = new Image();
+numimg.src = "image/numbers.png";
+
 // ClipRect (8, 41) to (247, 148)
 function drawScore(pos, notes) {
-  L2C.clearRect(0, 0, L2C.width, L2C.height);
+  L2C.clearRect(0, 0, SCREEN.width, SCREEN.height);
+
+  var realX = MOUSEX - OFFSETLEFT;
+  var realY = MOUSEY - OFFSETTOP;
+  var g = toGrid(realX, realY);
+  if (g !== false && g[1] >= 11) {
+      drawHorizontalBar(g[0]);
+  }
+
   if (pos == 0) {
     var w = gclef.width;
     var h = gclef.height;
@@ -164,22 +176,58 @@ function drawScore(pos, notes) {
     L2C.beginPath();
     L2C.setLineDash(dashList);
     L2C.lineWidth = MAGNIFY;
+    var barnum = pos + i - 2;
+    if (i % 4 == orange) {
+      drawBarNumber(i, barnum / 4 + 1);
+      L2C.strokeStyle = '#F88000';
+    } else {
+      L2C.strokeStyle = '#A0C0B0';
+    }
     L2C.strokeStyle = (i % 4 == orange) ? '#F89000' : '#A0C0B0';
     var x = (16 + 32 * i) * MAGNIFY;
     L2C.moveTo(x,  41 * MAGNIFY);
     L2C.lineTo(x, 148 * MAGNIFY);
     L2C.stroke();
 
-    var b = notes[pos + i - 2];
+    var b = notes[barnum];
+    var hflag = false;
     for (var j = 0; j < b.length; j++) {
       var sndnum = b[j] >> 8;
       var scale  = b[j] & 0x0F;
+      if (!hflag && (scale >= 11)) {
+        hflag = true;
+        drawHorizontalBar(i);
+      }
       L2C.drawImage(SOUNDS[sndnum].image, x - 8 * MAGNIFY,
         (40 + scale * 8) * MAGNIFY);
     }
   }
 }
 
+// X is the x of vertical bar (in grid)
+function drawHorizontalBar(gridX) {
+  var width = (gridX == 7) ? 20 : 24;
+  width *= MAGNIFY;
+  L2C.fillRect((4 + 32 * gridX) * MAGNIFY,
+    (38 + 11 * 8) * MAGNIFY + HALFCHARSIZE,
+    width, 2 * MAGNIFY);
+}
+
+function drawBarNumber(gridX, barnum) {
+  var x = (16 + 32 * gridX) * MAGNIFY;
+  var y = (40 - 7) * MAGNIFY;
+  var nums = [];
+  while (barnum > 0) {
+    nums.push(barnum % 10);
+    barnum = Math.floor(barnum / 10);
+  }
+  for (var i = 0; i <= nums.length; i++) {
+    var n = nums.pop();
+    var width = (n == 1) ? 3 : ((n == 4) ? 5 : 4);
+    L2C.drawImage(NUMBERS[n], x, y, 5 * MAGNIFY, 7 * MAGNIFY);
+    x += width * MAGNIFY;
+  }
+}
 
 function changeCursor(num) {
   SCREEN.style.cursor = 'url(' + SOUNDS[num].image.src + ')' + HALFCHARSIZE +' '+ HALFCHARSIZE + ', auto';
@@ -196,6 +244,27 @@ function drawCurChar(image) {
   L1C.fillRect(x, y + CHARSIZE - MAGNIFY, CHARSIZE, MAGNIFY);
 }
 
+function toGrid(realX, realY) {
+  var gridLeft   = (8   + 4) * MAGNIFY;
+  var gridTop    = (41     ) * MAGNIFY;
+  var gridRight  = (247 - 4) * MAGNIFY;
+  var gridBottom = (148 - 4) * MAGNIFY;
+  if (realX < gridLeft || realX > gridRight ||
+      realY < gridTop  || realY > gridBottom)
+    return false;
+
+  var gridX = Math.floor((realX - gridLeft) / CHARSIZE);
+  if (gridX % 2 != 0) return false; // Not near the bar
+  gridX /= 2;
+  var gridY = Math.floor((realY - gridTop) / HALFCHARSIZE);
+
+  // Consider G-Clef and repeat head area
+  if (CurPos == 0 && gridX < 2 || CurPos == 1 && gridX == 0)
+    return false;
+  else
+    return [gridX, gridY];
+}
+
 SCREEN = document.getElementById("layer2");
 // You should not use .style.width(or height) here.
 // You must not append "px" here.
@@ -209,22 +278,11 @@ L2C.lastMouseY = 0;
 SCREEN.addEventListener("click", function(e) {
   var realX = e.clientX - OFFSETLEFT;
   var realY = e.clientY - OFFSETTOP;
-  var gridLeft   = (8   + 4) * MAGNIFY;
-  var gridTop    = (41     ) * MAGNIFY;
-  var gridRight  = (247 - 4) * MAGNIFY;
-  var gridBottom = (148 - 4) * MAGNIFY;
-  if (realX < gridLeft || realX > gridRight ||
-      realY < gridTop  || realY > gridBottom)
-    return;
 
-  var gridX = Math.floor((realX - gridLeft) / CHARSIZE);
-  if (gridX % 2 != 0) return; // Not near the bar
-  gridX /= 2;
-  var gridY = Math.floor((realY - gridTop) / HALFCHARSIZE);
-
-  // Consider G-Clef and repeat head area
-  if (CurPos == 0 && gridX < 2 || CurPos == 1 && gridX == 0)
-    return;
+  var g = toGrid(realX, realY);
+  if (g === false) return;
+  var gridX = g[0];
+  var gridY = g[1];
 
   // Map logical x to real bar number
   var b = CurPos + gridX - 2;
@@ -234,6 +292,7 @@ SCREEN.addEventListener("click", function(e) {
   if (e.ctrlKey ) gridY |= 0x40;
   var note = (CurChar << 8) | gridY;
   var notes = CurScore['notes'][b];
+  SOUNDS[CurChar].play(gridY);
   if (notes.indexOf(note) != -1) return;
   notes.push(note);
   CurScore['notes'][b] = notes;
@@ -247,13 +306,6 @@ SCREEN.addEventListener("mousemove", function(e) {
 
 
 function doAnimation(time) {
-  var x = 8 * MAGNIFY;
-  var y = 41 * MAGNIFY;
-  var width = (247 - 8 + 1) * MAGNIFY;
-  var height = (148 - 41 + 1) * MAGNIFY;
-  var realX = MOUSEX - OFFSETLEFT;
-  var realY = MOUSEY - OFFSETTOP;
-
   // Bomb
   bombTimer.checkAndFire(time);
 
@@ -285,7 +337,7 @@ function onload() {
     b.se = SOUNDS[i];
     b.se.image = bimgs[i];
     b.addEventListener("click", function() {
-      this.se.play(0);
+      this.se.play(9); // Note F
       CurChar = this.num;
       changeCursor(this.num);
       drawCurChar(this.se.image);
@@ -297,6 +349,9 @@ function onload() {
   var tmpa = [];
   for (var i = 0; i < CurMaxBars; i++) tmpa[i] = [];
   CurScore['notes'] = tmpa;
+
+  // Make number images from the number sheet
+  NUMBERS = sliceImage(numimg, 5, 7);
 
   // Initializing Screen
   CurPos = 0;
@@ -312,6 +367,10 @@ function onload() {
   var r = document.createElement('input');
   r.id = 'scroll';
   r.type = 'range';
+  r.value = 0;
+  r.max = CurMaxBars - 8;
+  r.min = 0;
+  r.step = 1;
   r.style['-webkit-appearance']='none';
   r.style['border-radius'] = '0px';
   r.style['background-color'] = '#F8F8F8';
@@ -323,6 +382,9 @@ function onload() {
   r.style.top  = 159 * MAGNIFY + 'px';
   r.style.width = 50 * MAGNIFY + 'px';
   r.style.height = 7 * MAGNIFY + 'px';
+  r.addEventListener("input", function(e) {
+    CurPos = parseInt(this.value);
+  });
   CONSOLE.appendChild(r);
 
   // It's very hard to set values to a pseudo element with JS.
