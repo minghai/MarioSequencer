@@ -13,17 +13,13 @@
 <body>
 <button onclick="se.play(0)">Play</button>
 <div id="console"
-  style="position: relative; margin:0; padding:0; border:0;">
- <canvas id="layer1" width="768" height="672" class="game"
+  style="position: relative; margin:0px auto; padding:0px; border:0px;
+         width:768px; height:672px;">
+ <canvas id="layer1" width="768px" height="672px" class="game"
    style="position: static; z-index: 0; opacity:1"></canvas>
- <canvas id="layer2" width="768" height="445" class="game"
+ <canvas id="layer2" width="768px" height="445px" class="game"
    style="position: absolute; z-index: 1;"></canvas>
 </div>
 <script src="shared.js"></script>
-<script>
-var buf = {};
-se = new SoundEntity('mario', 'wav/sound01.wav');
-se.load();
-</script>
 </body>
 </html>

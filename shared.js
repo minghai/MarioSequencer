@@ -1,18 +1,31 @@
 // GLOBAL VARIABLES
+//   Constants: Full capital letters
+//   Variables: CamelCase
 AC = new webkitAudioContext();
 SEMITONERATIO = Math.pow(2, 1/12);
 MAGNIFY = 3;
 CHARSIZE = 16 * MAGNIFY;
 HALFCHARSIZE = Math.floor(CHARSIZE / 2);
-MOUSEX = 0;
-MOUSEY = 0;
+MouseX = 0;
+MouseY = 0;
 CONSOLE = document.getElementById("console");
 OFFSETLEFT = CONSOLE.offsetLeft;
 OFFSETTOP  = CONSOLE.offsetTop;
 CurChar = 0;
 CurPos = 0;
 CurScore = {};
-CurMaxBars = 24 * 4;
+DEFAULTMAXBARS = 24 * 4 + 1; // 24 bars by default
+CurMaxBars = DEFAULTMAXBARS;
+Mario = null; // Mamma Mia!
+
+/*
+ * GameStatus: Game mode
+ *   0: Edit
+ *   1: Mario Entering
+ *   2: Playing
+ *   3: Mario Leaving
+ */
+GameStatus = 0;
 
 // shim layer with setTimeout fallback
 window.requestAnimFrame = (function(){
@@ -27,15 +40,14 @@ return  window.requestAnimationFrame ||
 })();
 
 // SoundEntity#constructor
-function SoundEntity(name, path) {
-  this.name = name;
+function SoundEntity(path) {
   this.path = path;
-  this.semitone = 0;
-  this.delta = 1;
   this.buffer = null;
 }
 
 // SoundEntity#play
+// The all wav files are recorded in the tone F.
+// You should choose correct playback rate to play a music.
 SoundEntity.prototype.play = function(scale) {
   var diff = [14, 12, 11, 9, 7, 6, 4, 2, 0, -1, -3, -5, -6];
   var source = AC.createBufferSource();
@@ -78,6 +90,64 @@ SoundEntity.prototype.load = function() {
   request.send();
 };
 
+// It's me, Mario!
+function MarioClass() {
+  this.offset = -16;
+  this.x = -16;
+  this.images = null;
+}
+
+MarioClass.prototype.init = function() {
+  this.x = -16;
+  this.offset = -16;
+  this.start = 0;
+  this.state = 0;
+}
+
+MarioClass.prototype.enter = function(timeStamp) {
+  if (this.start == 0) this.start = timeStamp;
+
+  var diff = timeStamp - this.start;
+  this.x = Math.floor(diff / 5) + this.offset;
+  if (this.x >= 40) this.x = 40; // 16 + 32 - 8
+  if (Math.floor(diff / 100) % 2 == 0) {
+    this.state = 1;
+  } else {
+    this.state = 0;
+  }
+  this.draw();
+}
+
+MarioClass.prototype.init4leaving = function() {
+  this.offset = this.x;
+  this.start = 0;
+}
+
+MarioClass.prototype.draw = function() {
+  L2C.drawImage(this.images[this.state],
+    this.x * MAGNIFY, (41 - 22) * MAGNIFY);
+}
+
+MarioClass.prototype.leave = function(timeStamp) {
+  if (this.start == 0) this.start = timeStamp;
+
+  var diff = timeStamp - this.start;
+  this.x = Math.floor(diff / 4) + this.offset;
+  if (Math.floor(diff / 100) % 2 == 0) {
+    this.state =  8;
+    this.draw();
+    var w = sweatimg.width;
+    var h = sweatimg.height;
+    L2C.drawImage(sweatimg,
+        0, 0, w, h,
+        (this.x - (w + 1)) * MAGNIFY, (41 - 22) * MAGNIFY,
+        w * MAGNIFY, h * MAGNIFY);
+  } else {
+    this.state = 9;
+    this.draw();
+  }
+}
+
 // Timer
 function easyTimer(time, func) {
   this.time = time;
@@ -94,11 +164,11 @@ easyTimer.prototype.checkAndFire = function(time) {
 
 // Asynchronous load of sounds
 SOUNDS = [];
-for (i = 1; i < 17; i++) {
+for (i = 1; i < 19; i++) {
   var tmp = '0';
   tmp += i.toString();
   var file = "wav/sound" + tmp.substr(-2) + ".wav";
-  var e = new SoundEntity('mario', file);
+  var e = new SoundEntity(file);
   e.load();
   SOUNDS[i-1] = e;
 }
@@ -141,30 +211,62 @@ function drawBomb(mySelf) {
 }
 
 // Prepare the G-Clef. (x, y) = (9, 48)
-gclef = new Image();
-gclef.src = "image/G_Clef.png";
+GClef = new Image();
+GClef.src = "image/G_Clef.png";
 
 // Prepare the numbers
 numimg = new Image();
 numimg.src = "image/numbers.png";
 
+// Prepare the Mario images
+marioimg = new Image();
+marioimg.src = "image/Mario.png";
+
+sweatimg = new Image();
+sweatimg.src = "image/mario_sweat.png";
+
+// Prepare the Play button
+playbtnimg = new Image();
+playbtnimg.src = "image/play_button.png";
+
+// Prepare the Stop button
+stopbtnimg = new Image();
+stopbtnimg.src = "image/stop_button.png";
+
+// Prepare the repeat marks
+repeatimg = new Image();
+repeatimg.src = "image/repeat_head.png";
+
+function drawRepeatHead(x) {
+  var w = RepeatMarks[0].width;
+  var h = RepeatMarks[0].height;
+  L2C.drawImage(RepeatMarks[0], x * MAGNIFY, 56 * MAGNIFY);
+}
+
 // ClipRect (8, 41) to (247, 148)
 function drawScore(pos, notes) {
   L2C.clearRect(0, 0, SCREEN.width, SCREEN.height);
 
-  var realX = MOUSEX - OFFSETLEFT;
-  var realY = MOUSEY - OFFSETTOP;
+  var realX = MouseX - OFFSETLEFT;
+  var realY = MouseY - OFFSETTOP;
   var g = toGrid(realX, realY);
   if (g !== false && g[1] >= 11) {
       drawHorizontalBar(g[0]);
   }
 
   if (pos == 0) {
-    var w = gclef.width;
-    var h = gclef.height;
-    L2C.drawImage(gclef,
+    var w = GClef.width;
+    var h = GClef.height;
+    // GClef image is NOT magnified yet.
+    L2C.drawImage(GClef,
       0, 0, w, h,
       9 * MAGNIFY, 48 * MAGNIFY, w * MAGNIFY, h * MAGNIFY);
+
+    if (CurScore.loop) {
+      drawRepeatHead(41);
+    }
+  } else if (pos == 1 && CurScore.loop) {
+    drawRepeatHead(9);
   }
 
   //ORANGE #F89000
@@ -173,10 +275,17 @@ function drawScore(pos, notes) {
   var orange = 3 - ((pos + 1) % 4);
   var i = (pos < 2) ? (2 - pos) : 0;
   for (; i < 8; i++) {
+    var x = (16 + 32 * i) * MAGNIFY;
+    var barnum = pos + i - 2;
+
+    if (barnum == CurScore.end) {
+      var img = CurScore.loop ? RepeatMarks[1] : EndMark;
+      L2C.drawImage(img, x - 7 * MAGNIFY, 56 * MAGNIFY);
+    }
+
     L2C.beginPath();
     L2C.setLineDash(dashList);
     L2C.lineWidth = MAGNIFY;
-    var barnum = pos + i - 2;
     if (i % 4 == orange) {
       drawBarNumber(i, barnum / 4 + 1);
       L2C.strokeStyle = '#F88000';
@@ -184,7 +293,6 @@ function drawScore(pos, notes) {
       L2C.strokeStyle = '#A0C0B0';
     }
     L2C.strokeStyle = (i % 4 == orange) ? '#F89000' : '#A0C0B0';
-    var x = (16 + 32 * i) * MAGNIFY;
     L2C.moveTo(x,  41 * MAGNIFY);
     L2C.lineTo(x, 148 * MAGNIFY);
     L2C.stroke();
@@ -214,16 +322,17 @@ function drawHorizontalBar(gridX) {
 }
 
 function drawBarNumber(gridX, barnum) {
-  var x = (16 + 32 * gridX) * MAGNIFY;
+  var x = (16 + 32 * gridX) * MAGNIFY - 1;
   var y = (40 - 7) * MAGNIFY;
   var nums = [];
   while (barnum > 0) {
     nums.push(barnum % 10);
     barnum = Math.floor(barnum / 10);
   }
+  if (nums.length == 1) x += 2 * MAGNIFY;
   for (var i = 0; i <= nums.length; i++) {
     var n = nums.pop();
-    var width = (n == 1) ? 3 : ((n == 4) ? 5 : 4);
+    var width = (n == 1) ? 4 : ((n == 4) ? 5 : 4);
     L2C.drawImage(NUMBERS[n], x, y, 5 * MAGNIFY, 7 * MAGNIFY);
     x += width * MAGNIFY;
   }
@@ -276,6 +385,8 @@ L2C.lastMouseX = 0;
 L2C.lastMouseY = 0;
 // ClipRect (8, 41) to (247, 148)
 SCREEN.addEventListener("click", function(e) {
+  if (GameStatus != 0) return;
+
   var realX = e.clientX - OFFSETLEFT;
   var realY = e.clientY - OFFSETTOP;
 
@@ -286,6 +397,8 @@ SCREEN.addEventListener("click", function(e) {
 
   // Map logical x to real bar number
   var b = CurPos + gridX - 2;
+
+  if (b >= CurScore.end) return;
 
   // Handle semitone
   if (e.shiftKey) gridY |= 0x80;
@@ -299,10 +412,95 @@ SCREEN.addEventListener("click", function(e) {
 });
 
 SCREEN.addEventListener("mousemove", function(e) {
-  MOUSEX = e.clientX;
-  MOUSEY = e.clientY;
+  MouseX = e.clientX;
+  MouseY = e.clientY;
 });
 
+// Read MSQ File
+// You really need this "dragover" event listener.
+// Check StackOverflow: http://bit.ly/1hHEINZ
+SCREEN.addEventListener("dragover", function(e) {
+  e.preventDefault();
+  return false;
+});
+// Translate dropped MSQ files into inner SCORE array.
+// You have to handle each file sequencially,
+// But you might want to download files parallel.
+// In such a case, Promise is very convinient utility.
+// http://www.html5rocks.com/en/tutorials/es6/promises/
+SCREEN.addEventListener("drop", function(e) {
+  e.preventDefault();
+  initScore();
+  // function to read given file objets.
+  // Input is a instance of a File object.
+  // Returns a instance of a Promise.
+  function readFile(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.name = file.name;
+      reader.addEventListener("load", function(e) {
+        resolve(e.target);
+      });
+      reader.readAsText(file, 'shift-jis');
+    });
+  };
+  function addMSQ(fileReader) {
+    lines = fileReader.result.split('\n');
+    keyword = ["SCORE", "TEMPO", "LOOP", "END", "TIME44"];
+    var values = {};
+    lines.forEach(function(line, i) {
+      if (line === "") return;
+      var kv = line.split("=");
+      var k = kv[0];
+      var v = kv[1];
+      if (i < keyword.length && k !== keyword[i]) {
+        throw new Error(fileReader.name + " :" + "line " + i + " must start with '" + keyword[i] + "'");
+      }
+      this[k] = v;
+    }, values);
+    
+    var s = values.SCORE;
+    var i = 0, count = 0;
+    // MSQ format is variable length string.
+    out:
+    while (i < s.length) {
+      var bar = [];
+      for (var j = 0; j < 3; j++) {
+        if (s[i] === "\r" || s[i] == undefined) break out;
+        var scale = parseInt(s[i++], 16);
+        if (scale !== 0) {
+          scale -= 1;
+          var tone = parseInt(s[i++], 16) - 1;
+          var note = (tone << 8) | scale;
+          bar.push(note);
+        }
+      }
+      CurScore.notes[count++] = bar;
+    }
+
+    CurScore.end   = parseInt(values.END) - 1;
+    CurScore.loop  = (values.LOOP === "TRUE");
+    CurScore.tempo = values.TEMPO;
+    CurScore.beats = (values.TIME44 === "TRUE") ? 4 : 3;
+  };
+  // FileList to Array for Mapping
+  var files = [].slice.call(e.dataTransfer.files);
+  files.map(readFile).reduce(function(chain, fp) {
+    return chain.then(function() {
+      return fp;
+    }).then(function(fileReader) {
+      addMSQ(fileReader);
+    }).catch(function(err) {
+      alert("Loading MSQ failed: " + err.message);
+    }).then(function() {
+      //ToDo
+      //Put End mark
+      //Scroll to 1st bar
+    });
+  }, Promise.resolve());
+
+  return false;
+});
 
 
 function doAnimation(time) {
@@ -311,33 +509,40 @@ function doAnimation(time) {
 
   drawScore(CurPos, CurScore['notes']);
 
+  if (GameStatus != 0) return;
+
   requestAnimFrame(doAnimation);
 }
 
-// 1st mario:   x=24, y=8, width=13, height=14
-// 2nd Kinopio: X=38, y=8, width=13, height=14
+function makeButton(x, y, w, h) {
+  var b = document.createElement("button");
+  b.className = "game";
+  b.style.position = 'absolute';
+  b.style.left =   x * MAGNIFY + "px";
+  b.style.top =    y * MAGNIFY + "px";
+  b.style.width =  w * MAGNIFY + "px";
+  b.style.height = h * MAGNIFY + "px";
+  b.style['z-index'] = 3;
+  b.style.background = "rgba(0,0,0,0)";
+  return b;
+}
 
+// INIT routine
 window.addEventListener("load", onload);
 function onload() {
-
   // Make buttons for changing a kind of notes.
+  //   1st mario:   x=24, y=8, width=13, height=14
+  //   2nd Kinopio: X=38, y=8, width=13, height=14
+  //   and so on...
   var bimgs = sliceImage(char_sheet, 16, 16);
+  delete char_sheet;
   for (var i = 0; i < 15; i++) {
-    var b = document.createElement("button");
+    var b = makeButton((24 + 14 * i), 8, 13, 14);
     b.num = i;
-    b.className = "game";
-    b.style.position = 'absolute';
-    b.style.left = (24 + 14 * i) * MAGNIFY + "px";
-    b.style.top = 8 * MAGNIFY + "px";
-    b.style.width = 13 * MAGNIFY + "px";
-    b.style.height = 14 * MAGNIFY + "px";
-    b.style['z-index'] = 3;
-    b.style.background = "rgba(0,0,0,0)";
-    
     b.se = SOUNDS[i];
     b.se.image = bimgs[i];
     b.addEventListener("click", function() {
-      this.se.play(9); // Note F
+      this.se.play(8); // Note F
       CurChar = this.num;
       changeCursor(this.num);
       drawCurChar(this.se.image);
@@ -346,12 +551,11 @@ function onload() {
   }
 
   // Prepare current empty score
-  var tmpa = [];
-  for (var i = 0; i < CurMaxBars; i++) tmpa[i] = [];
-  CurScore['notes'] = tmpa;
+  initScore();
 
   // Make number images from the number sheet
   NUMBERS = sliceImage(numimg, 5, 7);
+  delete numimg;
 
   // Initializing Screen
   CurPos = 0;
@@ -362,13 +566,19 @@ function onload() {
 
   // Make bomb images from the bomb sheet
   BOMBS = sliceImage(bombimg, 14, 18);
+  delete bombimg;
+
+  // Make Mario images
+  Mario = new MarioClass();
+  Mario.images = sliceImage(marioimg, 16, 22);
+  delete marioimg;
 
   // Prepare Scroll Range
   var r = document.createElement('input');
   r.id = 'scroll';
   r.type = 'range';
   r.value = 0;
-  r.max = CurMaxBars - 8;
+  r.max = CurMaxBars - 6;
   r.min = 0;
   r.step = 1;
   r.style['-webkit-appearance']='none';
@@ -402,8 +612,163 @@ function onload() {
   );
   s.sheet.addRule('#scroll:focus', 'outline: none !important;');
 
+  // Prepare range's side buttons for inc/decrements
+  var b = makeButton(184, 158, 7, 9);
+  b.id = 'toLeft';
+  b.addEventListener("click", function (e) {
+    var r = document.getElementById('scroll');
+    if (r.value > 0) {
+      r.value--;
+      CurPos--;
+    }
+  });
+  CONSOLE.appendChild(b);
+
+  var b = makeButton(241, 158, 7, 9);
+  b.id = 'toRight';
+  b.addEventListener("click", function (e) {
+    var r = document.getElementById('scroll');
+    if (r.value < CurMaxBars - 6) {
+      r.value++;
+      CurPos++;
+    }
+  });
+  CONSOLE.appendChild(b);
+
+  // Prepare Play Button (55, 168)
+  var b = makeButton(55, 168, 12, 15);
+  b.id = 'play';
+  b.images = sliceImage(playbtnimg, 12, 15);
+  delete playbtnimg;
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  b.addEventListener("click", playListener);
+  s.sheet.addRule('#play:focus', 'outline: none !important;');
+  CONSOLE.appendChild(b);
+
+  // Prepare Stop Button (21, 168)
+  var b = makeButton(21, 168, 16, 15);
+  b.id = 'stop';
+  b.disabled = false;
+  // stopbtn image including loop button (next)
+  var imgs = sliceImage(stopbtnimg, 16, 15);
+  b.images = [imgs[0], imgs[1]];
+  delete stopbtnimg;
+  b.style.backgroundImage = "url(" + b.images[1].src + ")";
+  b.addEventListener("click", stopListener);
+  s.sheet.addRule('#stop:focus', 'outline: none !important;');
+  CONSOLE.appendChild(b);
+
+  // Prepare Loop Button (85, 168)
+  var b = makeButton(85, 168, 16, 15); 
+  b.id = 'loop';
+  b.images = [imgs[2], imgs[3]]; // made in Stop button (above)
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  CurScore.loop = false;
+  b.addEventListener("click", function(e) {
+    var num;
+    if (CurScore.loop) {
+      CurScore.loop = false;
+      num = 0;
+    } else {
+      CurScore.loop = true;
+      num = 1;
+    }
+    this.style.backgroundImage = "url(" + this.images[num].src + ")";
+    SOUNDS[17].play(8);
+  });
+  s.sheet.addRule('#loop:focus', 'outline: none !important;');
+  CONSOLE.appendChild(b);
+
+  // Prepare Repeat (global!)
+  RepeatMarks = sliceImage(repeatimg, 13, 62);
+  delete repeatimg;
+  EndMark = RepeatMarks[2];
+
   // Start Animation
   requestAnimFrame(doAnimation);
+}
+
+// Play Button Listener
+function playListener(e) {
+  this.style.backgroundImage = "url(" + this.images[1].src + ")";
+  SOUNDS[17].play(8);
+  var b = document.getElementById("stop");
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  b.disabled = false;
+  this.disabled = true; // Would be unlocked by stop button
+
+  document.getElementById("toLeft").disabled  = true;
+  document.getElementById("toRight").disabled = true;
+  document.getElementById("scroll").disabled  = true;
+
+  GameStatus = 1; // Mario Entering the stage
+  CurPos = 0;     // doAnimation will draw POS 0 and stop
+  Mario.init();
+  requestAnimFrame(doMarioEnter);
+}
+
+// Stop Button Listener
+function stopListener(e) {
+  this.style.backgroundImage = "url(" + this.images[1].src + ")";
+  SOUNDS[17].play(8);
+  var b = document.getElementById("play");
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  //b.disabled = false; // Do after Mario left the stage
+  this.disabled = true; // Would be unlocked by play button
+
+  GameStatus = 3; // Mario leaves from the stage
+  Mario.init4leaving();
+  requestAnimFrame(doMarioLeave);
+}
+
+// Let Mario run on the stage
+function doMarioEnter(timeStamp) {
+  bombTimer.checkAndFire(timeStamp);
+  drawScore(0, CurScore.notes);
+  Mario.enter(timeStamp);
+
+  if (Mario.x < 40) {
+    requestAnimFrame(doMarioEnter);
+  } else {
+    Mario.offset = 40;
+    GameStatus = 2;
+    requestAnimFrame(doMarioPlay);
+  }
+}
+
+// Let Mario play the music!
+function doMarioPlay(timestamp) {
+  // ToDo
+}
+
+// Let Mario leave from the stage
+function doMarioLeave(timeStamp) {
+  bombTimer.checkAndFire(timeStamp);
+  drawScore(CurPos, CurScore.notes);
+  Mario.leave(timeStamp);
+
+  if (Mario.x < 247) {
+    requestAnimFrame(doMarioLeave);
+  } else {
+    GameStatus = 0;
+    document.getElementById("toLeft").disabled  = false;
+    document.getElementById("toRight").disabled = false;
+    document.getElementById("scroll").disabled  = false;
+    document.getElementById("play").disabled    = false;
+
+    requestAnimFrame(doAnimation);
+  }
+}
+
+// Initialize Score
+function initScore() {
+  var tmpa = [];
+  for (var i = 0; i < DEFAULTMAXBARS; i++) tmpa[i] = [];
+  CurScore.notes = tmpa;
+  CurMaxBars = DEFAULTMAXBARS;
+  CurScore.beats = 4;
+  CurScore.loop = false;
+  CurScore.end = DEFAULTMAXBARS - 1;
 }
 
 // sliceImage(img, width, height)
