@@ -17,6 +17,7 @@ CurScore = {};
 DEFAULTMAXBARS = 24 * 4 + 1; // 24 bars by default
 CurMaxBars = DEFAULTMAXBARS;
 Mario = null; // Mamma Mia!
+AnimeID = 0; // ID for cancel animation
 
 /*
  * GameStatus: Game mode
@@ -48,14 +49,15 @@ function SoundEntity(path) {
 // SoundEntity#play
 // The all wav files are recorded in the tone F.
 // You should choose correct playback rate to play a music.
-SoundEntity.prototype.play = function(scale) {
+SoundEntity.prototype.play = function(scale, delay) {
   var diff = [14, 12, 11, 9, 7, 6, 4, 2, 0, -1, -3, -5, -6];
   var source = AC.createBufferSource();
   var semitone = diff[scale];
+  if (delay == undefined) delay = 0;
   source.buffer = this.buffer;
   source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
   source.connect(AC.destination);
-  source.start(0);
+  source.start(delay);
 };
 
 SoundEntity.prototype.load = function() {
@@ -92,9 +94,11 @@ SoundEntity.prototype.load = function() {
 
 // It's me, Mario!
 function MarioClass() {
-  this.offset = -16;
-  this.x = -16;
+  this.offset = -16; // offset in X
+  this.scroll = 0;   // Scroll amount in dots
+  this.x = -16;      // X-position in dots.
   this.images = null;
+  this.pos = 0;      // position in bar number
 }
 
 MarioClass.prototype.init = function() {
@@ -102,7 +106,8 @@ MarioClass.prototype.init = function() {
   this.offset = -16;
   this.start = 0;
   this.state = 0;
-}
+  this.pos = 0;
+};
 
 MarioClass.prototype.enter = function(timeStamp) {
   if (this.start == 0) this.start = timeStamp;
@@ -116,17 +121,117 @@ MarioClass.prototype.enter = function(timeStamp) {
     this.state = 0;
   }
   this.draw();
-}
+};
 
 MarioClass.prototype.init4leaving = function() {
   this.offset = this.x;
   this.start = 0;
-}
+};
+
+/*
+ * You can assume that animation is always 60FPS (in theory :-)
+ * So 1[frame] is 1 / 60 = 0.1666...[ms]
+ * Mario runs 32[dots] per 1[beat]
+ * [beat/sec] = TEMPO[bpm] / 60[sec]
+ * [sec/beat] = 60[sec] / TEMPO[bpm]
+ * So Mario runs 1[dot] in 60 / TEMPO / 32 [sec]
+ * If [sec/1beat] / 32 < [sec/1frame] then Mario warps. (NOT successive)
+ * In that case, you have to predicate the postion.
+ * (And even the samples, it can't draw every single increments...)
+ *
+ * MAX BPM is when t[sec/1beat] = 2/60, then TEMPO = 1800
+ * Acctually, you can set TEMPO<3600, but it sounds just like noise over 2000
+ * Real Mario sequencer tempo limit seems 700.
+ * So this is good enough.
+ * (Famous fastest song, Hatsune Miku no Shoshitsu is 245 (* 4 < 1000))
+ *
+ * At first, Mario runs to the center of the stage.
+ * Then, Mario will be fixed at the position.
+ * Instead, the score is scrolling from then.
+ * When the last bar appears, scroll stops and Mario runs again.
+ *
+ * Mario should jump from one bar before the next bar which has the note(s)
+ *
+ */
+MarioClass.prototype.init4playing = function(timeStamp) {
+  this.start = timeStamp;
+  this.offset = this.x;
+  this.scroll = 0;
+  this.pos = 1; // logical bar position at first untill scroll starts
+  this.state == 1;
+  this.spb = 60  * 1000 / CurScore.tempo; // [ms/beat]
+  this.nextNoteOn = timeStamp + this.spb;
+    console.log("nextNoteOn = " + this.nextNoteOn + " timeStamp = "+ timeStamp)
+};
+
+MarioClass.prototype.play = function(timeStamp) {
+  function scheduleAndPlay(notes, time) {
+    if (time < 0) time = 0;
+    for (var i = 0; i < notes.length; i++) {
+      var note = notes[i];
+      var num = note >> 8;
+      var scale = note & 0xFF;
+      SOUNDS[num].play(scale, time / 1000); // [ms] -> [s]
+    }
+  }
+  var diff = timeStamp - this.start; // both stamp and start are [ms]
+  var left = this.nextNoteOn - timeStamp;
+
+  // ToDo: set status jump if needed
+  this.state = (Math.floor(diff / 100) % 2 == 0) ? 1 : 0;
+  var scroll = document.getElementById('scroll');
+
+  if (Mario.x < 120) { // Mario still has to run
+    // If logical left time to next note is smaller than t [sec/1frame]
+    if (left <= 1000 / 59) { // t can be longer than 1000/60 but seems like not 1000/59
+      this.pos++;
+      this.x = (16 + 32 * this.pos - 8);
+      this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
+      scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+    } else {
+      // 32 dots in t[sec/1beat]
+      this.x = diff * (32 * CurScore.tempo / 60000) + this.offset;
+      if (this.x >= 120) {
+        this.scroll = this.x - 120;
+        this.x = 120;
+      }
+    }
+  } else if (CurPos <= CurScore.end - 6) { // Scroll 
+    this.x = 120;
+    if (left <= 1000/59) {
+      this.pos++;
+      this.scroll = 16;
+      this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
+      //  Schedule Play!
+      scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+    } else {
+      var s = diff * (32 * CurScore.tempo / 60000) - (120 - 40);
+      this.scroll = Math.round(s % 32);
+      CurPos = Math.floor(s / 32);
+      scroll.value = CurPos;
+    }
+  } else {
+    this.scroll = 0;
+    // If logical left time to next note is smaller than t [sec/1frame]
+    if (left <= 1000 / 59) { // t can be longer than 1000/60 but seems like not 1000/59
+      this.pos++;
+      this.x = (16 + 32 * (this.pos - CurPos) - 8);
+      this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
+      scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+    } else {
+      // 32 dots in t[sec/1beat]
+      this.x = diff * (32 * CurScore.tempo / 60000) - (CurPos + 1) * 32 + 72;
+    }
+    console.log("this.x = " + this.x);
+  }
+  drawScore(CurPos, CurScore.notes, this.scroll);
+  this.draw();
+};
 
 MarioClass.prototype.draw = function() {
   L2C.drawImage(this.images[this.state],
     this.x * MAGNIFY, (41 - 22) * MAGNIFY);
-}
+};
 
 MarioClass.prototype.leave = function(timeStamp) {
   if (this.start == 0) this.start = timeStamp;
@@ -146,7 +251,7 @@ MarioClass.prototype.leave = function(timeStamp) {
     this.state = 9;
     this.draw();
   }
-}
+};
 
 // Timer
 function easyTimer(time, func) {
@@ -233,6 +338,10 @@ playbtnimg.src = "image/play_button.png";
 stopbtnimg = new Image();
 stopbtnimg.src = "image/stop_button.png";
 
+// Prepare tempo range slider thumb image
+thumbimg = new Image();
+thumbimg.src = "image/slider_thumb.png";
+
 // Prepare the repeat marks
 repeatimg = new Image();
 repeatimg.src = "image/repeat_head.png";
@@ -243,15 +352,21 @@ function drawRepeatHead(x) {
   L2C.drawImage(RepeatMarks[0], x * MAGNIFY, 56 * MAGNIFY);
 }
 
-// ClipRect (8, 41) to (247, 148)
-function drawScore(pos, notes) {
+// Score Area (8, 41) to (247, 148)
+function drawScore(pos, notes, scroll) {
+  // Clip only X
   L2C.clearRect(0, 0, SCREEN.width, SCREEN.height);
+  L2C.save();
+  L2C.rect(8 * MAGNIFY, 0, (247 - 8 + 1) * MAGNIFY, 152 * MAGNIFY);
+  L2C.clip();
 
+  // If mouse cursor on or under the C, draw horizontal line
   var realX = MouseX - OFFSETLEFT;
   var realY = MouseY - OFFSETTOP;
   var g = toGrid(realX, realY);
-  if (g !== false && g[1] >= 11) {
-      drawHorizontalBar(g[0]);
+  // Edit mode only, no scroll
+  if (GameStatus == 0 && g !== false && g[1] >= 11) {
+      drawHorizontalBar(g[0], 0);
   }
 
   if (pos == 0) {
@@ -260,13 +375,13 @@ function drawScore(pos, notes) {
     // GClef image is NOT magnified yet.
     L2C.drawImage(GClef,
       0, 0, w, h,
-      9 * MAGNIFY, 48 * MAGNIFY, w * MAGNIFY, h * MAGNIFY);
+      (9 - scroll) * MAGNIFY, 48 * MAGNIFY, w * MAGNIFY, h * MAGNIFY);
 
     if (CurScore.loop) {
-      drawRepeatHead(41);
+      drawRepeatHead(41 - scroll);
     }
   } else if (pos == 1 && CurScore.loop) {
-    drawRepeatHead(9);
+    drawRepeatHead(9 - scroll);
   }
 
   //ORANGE #F89000
@@ -274,8 +389,8 @@ function drawScore(pos, notes) {
   // orange = 2, 1, 0, 3, 2, 1, 0, 3, .....
   var orange = 3 - ((pos + 1) % 4);
   var i = (pos < 2) ? (2 - pos) : 0;
-  for (; i < 8; i++) {
-    var x = (16 + 32 * i) * MAGNIFY;
+  for (; i < 9; i++) {
+    var x = (16 + 32 * i - scroll) * MAGNIFY;
     var barnum = pos + i - 2;
 
     if (barnum == CurScore.end) {
@@ -287,7 +402,7 @@ function drawScore(pos, notes) {
     L2C.setLineDash(dashList);
     L2C.lineWidth = MAGNIFY;
     if (i % 4 == orange) {
-      drawBarNumber(i, barnum / 4 + 1);
+      if (GameStatus == 0) drawBarNumber(i, barnum / 4 + 1);
       L2C.strokeStyle = '#F88000';
     } else {
       L2C.strokeStyle = '#A0C0B0';
@@ -298,25 +413,26 @@ function drawScore(pos, notes) {
     L2C.stroke();
 
     var b = notes[barnum];
+    if (b == undefined) continue;
     var hflag = false;
     for (var j = 0; j < b.length; j++) {
       var sndnum = b[j] >> 8;
       var scale  = b[j] & 0x0F;
       if (!hflag && (scale >= 11)) {
         hflag = true;
-        drawHorizontalBar(i);
+        drawHorizontalBar(i, scroll);
       }
       L2C.drawImage(SOUNDS[sndnum].image, x - 8 * MAGNIFY,
         (40 + scale * 8) * MAGNIFY);
     }
   }
+  L2C.restore();
 }
 
 // X is the x of vertical bar (in grid)
-function drawHorizontalBar(gridX) {
-  var width = (gridX == 7) ? 20 : 24;
-  width *= MAGNIFY;
-  L2C.fillRect((4 + 32 * gridX) * MAGNIFY,
+function drawHorizontalBar(gridX, scroll) {
+  var width = 24 * MAGNIFY;
+  L2C.fillRect((4 + 32 * gridX - scroll) * MAGNIFY,
     (38 + 11 * 8) * MAGNIFY + HALFCHARSIZE,
     width, 2 * MAGNIFY);
 }
@@ -378,7 +494,7 @@ SCREEN = document.getElementById("layer2");
 // You should not use .style.width(or height) here.
 // You must not append "px" here.
 SCREEN.width  = 256 * MAGNIFY;
-SCREEN.height = 151 * MAGNIFY;
+SCREEN.height = 152 * MAGNIFY;
 L2C = SCREEN.getContext('2d');
 L2C.imageSmoothingEnabled = false;
 L2C.lastMouseX = 0;
@@ -445,7 +561,7 @@ SCREEN.addEventListener("drop", function(e) {
     });
   };
   function addMSQ(fileReader) {
-    lines = fileReader.result.split('\n');
+    lines = fileReader.result.split(/\r\n|\r|\n/);
     keyword = ["SCORE", "TEMPO", "LOOP", "END", "TIME44"];
     var values = {};
     lines.forEach(function(line, i) {
@@ -479,9 +595,12 @@ SCREEN.addEventListener("drop", function(e) {
     }
 
     CurScore.end   = parseInt(values.END) - 1;
-    CurScore.loop  = (values.LOOP === "TRUE");
     CurScore.tempo = values.TEMPO;
-    CurScore.beats = (values.TIME44 === "TRUE") ? 4 : 3;
+    CurScore.beats = (values.TIME44 == "TRUE") ? 4 : 3;
+    if (values.LOOP == "TRUE" && CurScore.loop == false) {
+      document.getElementById("loop").dispatchEvent(
+          new Event("click"));
+    }
   };
   // FileList to Array for Mapping
   var files = [].slice.call(e.dataTransfer.files);
@@ -507,7 +626,7 @@ function doAnimation(time) {
   // Bomb
   bombTimer.checkAndFire(time);
 
-  drawScore(CurPos, CurScore['notes']);
+  drawScore(CurPos, CurScore['notes'], 0);
 
   if (GameStatus != 0) return;
 
@@ -550,6 +669,63 @@ function onload() {
     CONSOLE.appendChild(b);
   }
 
+  // For inserting pseudo elements' styles
+  var s = document.createElement("style");
+  document.head.appendChild(s);
+
+  // Prepare Play Button (55, 168)
+  var b = makeButton(55, 168, 12, 15);
+  b.id = 'play';
+  b.images = sliceImage(playbtnimg, 12, 15);
+  delete playbtnimg;
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  b.addEventListener("click", playListener);
+  s.sheet.insertRule('#play:focus {outline: none !important;}', 0);
+  CONSOLE.appendChild(b);
+
+  // Prepare Stop Button (21, 168)
+  var b = makeButton(21, 168, 16, 15);
+  b.id = 'stop';
+  b.disabled = false;
+  // stopbtn image including loop button (next)
+  var imgs = sliceImage(stopbtnimg, 16, 15);
+  b.images = [imgs[0], imgs[1]];
+  delete stopbtnimg;
+  b.style.backgroundImage = "url(" + b.images[1].src + ")";
+  b.addEventListener("click", stopListener);
+  s.sheet.insertRule('#stop:focus {outline: none !important;}', 0);
+  CONSOLE.appendChild(b);
+
+  // Prepare Loop Button (85, 168)
+  var b = makeButton(85, 168, 16, 15); 
+  b.id = 'loop';
+  b.images = [imgs[2], imgs[3]]; // made in Stop button (above)
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  CurScore.loop = false;
+  b.addEventListener("click", function(e) {
+    var num;
+    if (CurScore.loop) {
+      CurScore.loop = false;
+      num = 0;
+    } else {
+      CurScore.loop = true;
+      num = 1;
+    }
+    this.style.backgroundImage = "url(" + this.images[num].src + ")";
+    SOUNDS[17].play(8);
+  });
+  b.reset = function () {
+    CurScore.loop = false;
+    this.style.backgroundImage = "url(" + this.images[0].src + ")";
+  };
+  s.sheet.insertRule('#loop:focus {outline: none !important;}', 0);
+  CONSOLE.appendChild(b);
+
+  // Prepare Repeat (global!)
+  RepeatMarks = sliceImage(repeatimg, 13, 62);
+  delete repeatimg;
+  EndMark = RepeatMarks[2];
+
   // Prepare current empty score
   initScore();
 
@@ -562,7 +738,7 @@ function onload() {
   CurChar = 0;
   drawCurChar(SOUNDS[CurChar].image);
   changeCursor(CurChar);
-  drawScore(CurPos, CurScore['notes']);
+  drawScore(CurPos, CurScore['notes'], 0);
 
   // Make bomb images from the bomb sheet
   BOMBS = sliceImage(bombimg, 14, 18);
@@ -572,6 +748,46 @@ function onload() {
   Mario = new MarioClass();
   Mario.images = sliceImage(marioimg, 16, 22);
   delete marioimg;
+
+  // Prepare tempo range
+  // (116, 172) width 40px, height 8px
+  var r = document.createElement('input');
+  r.id = 'tempo';
+  r.type = 'range';
+  r.value = 525;
+  r.max = 1000;
+  r.min = 50;
+  r.step = 1;
+  r.style['-webkit-appearance']='none';
+  r.style['border-radius'] = '0px';
+  r.style['background-color'] = 'rgba(0, 0, 0, 0.0)';
+  r.style['box-shadow'] = 'inset 0 0 0 #000';
+  r.style['vertical-align'] = 'middle';
+  r.style.position = 'absolute';
+  r.style.margin = 0;
+  r.style.left = 116 * MAGNIFY + 'px';
+  r.style.top  = 172 * MAGNIFY + 'px';
+  r.style.width = 40 * MAGNIFY + 'px';
+  r.style.height = 8 * MAGNIFY + 'px';
+  r.addEventListener("input", function(e) {
+    CurScore.tempo = parseInt(this.value);
+  });
+  CONSOLE.appendChild(r);
+
+  var t = sliceImage(thumbimg, 5, 8)[0];
+  // It's very hard to set values to a pseudo element with JS.
+  // http://pankajparashar.com/posts/modify-pseudo-elements-css/
+  s.sheet.insertRule('#tempo::-webkit-slider-thumb {' +
+	  "-webkit-appearance: none !important;" +
+    "background-image: url('" + t.src + "');" +
+    "background-repeat: no-repeat;" +
+    "background-size: 100% 100%;" +
+	  "border: 0px;" +
+	  "width: " + 5 * MAGNIFY + "px;" +
+	  "height:" + 8 * MAGNIFY + 'px;}', 0
+  );
+  s.sheet.insertRule('#tempo:focus {outline: none !important;}', 0);
+
 
   // Prepare Scroll Range
   var r = document.createElement('input');
@@ -599,18 +815,16 @@ function onload() {
 
   // It's very hard to set values to a pseudo element with JS.
   // http://pankajparashar.com/posts/modify-pseudo-elements-css/
-  var s = document.createElement("style");
-  document.head.appendChild(s);
-  s.sheet.addRule('#scroll::-webkit-slider-thumb',
+  s.sheet.insertRule('#scroll::-webkit-slider-thumb {' +
 	  "-webkit-appearance: none !important;" +
 	  "border-radius: 0px;" +
 	  "background-color: #A870D0;" +
 	  "box-shadow:inset 0 0 0px;" +
 	  "border: 0px;" +
 	  "width: " + 5 * MAGNIFY + "px;" +
-	  "height:" + 7 * MAGNIFY + "px;"
+	  "height:" + 7 * MAGNIFY + 'px;}', 0
   );
-  s.sheet.addRule('#scroll:focus', 'outline: none !important;');
+  s.sheet.insertRule('#scroll:focus {outline: none !important;}', 0);
 
   // Prepare range's side buttons for inc/decrements
   var b = makeButton(184, 158, 7, 9);
@@ -634,55 +848,6 @@ function onload() {
     }
   });
   CONSOLE.appendChild(b);
-
-  // Prepare Play Button (55, 168)
-  var b = makeButton(55, 168, 12, 15);
-  b.id = 'play';
-  b.images = sliceImage(playbtnimg, 12, 15);
-  delete playbtnimg;
-  b.style.backgroundImage = "url(" + b.images[0].src + ")";
-  b.addEventListener("click", playListener);
-  s.sheet.addRule('#play:focus', 'outline: none !important;');
-  CONSOLE.appendChild(b);
-
-  // Prepare Stop Button (21, 168)
-  var b = makeButton(21, 168, 16, 15);
-  b.id = 'stop';
-  b.disabled = false;
-  // stopbtn image including loop button (next)
-  var imgs = sliceImage(stopbtnimg, 16, 15);
-  b.images = [imgs[0], imgs[1]];
-  delete stopbtnimg;
-  b.style.backgroundImage = "url(" + b.images[1].src + ")";
-  b.addEventListener("click", stopListener);
-  s.sheet.addRule('#stop:focus', 'outline: none !important;');
-  CONSOLE.appendChild(b);
-
-  // Prepare Loop Button (85, 168)
-  var b = makeButton(85, 168, 16, 15); 
-  b.id = 'loop';
-  b.images = [imgs[2], imgs[3]]; // made in Stop button (above)
-  b.style.backgroundImage = "url(" + b.images[0].src + ")";
-  CurScore.loop = false;
-  b.addEventListener("click", function(e) {
-    var num;
-    if (CurScore.loop) {
-      CurScore.loop = false;
-      num = 0;
-    } else {
-      CurScore.loop = true;
-      num = 1;
-    }
-    this.style.backgroundImage = "url(" + this.images[num].src + ")";
-    SOUNDS[17].play(8);
-  });
-  s.sheet.addRule('#loop:focus', 'outline: none !important;');
-  CONSOLE.appendChild(b);
-
-  // Prepare Repeat (global!)
-  RepeatMarks = sliceImage(repeatimg, 13, 62);
-  delete repeatimg;
-  EndMark = RepeatMarks[2];
 
   // Start Animation
   requestAnimFrame(doAnimation);
@@ -710,7 +875,8 @@ function playListener(e) {
 // Stop Button Listener
 function stopListener(e) {
   this.style.backgroundImage = "url(" + this.images[1].src + ")";
-  SOUNDS[17].play(8);
+  // Sound ON: click , OFF: called by doMarioPlay
+  if (e != undefined) SOUNDS[17].play(8);
   var b = document.getElementById("play");
   b.style.backgroundImage = "url(" + b.images[0].src + ")";
   //b.disabled = false; // Do after Mario left the stage
@@ -718,33 +884,49 @@ function stopListener(e) {
 
   GameStatus = 3; // Mario leaves from the stage
   Mario.init4leaving();
+  if (AnimeID != 0) cancelAnimationFrame(AnimeID);
   requestAnimFrame(doMarioLeave);
 }
 
 // Let Mario run on the stage
 function doMarioEnter(timeStamp) {
   bombTimer.checkAndFire(timeStamp);
-  drawScore(0, CurScore.notes);
+  drawScore(0, CurScore.notes, 0);
   Mario.enter(timeStamp);
 
   if (Mario.x < 40) {
-    requestAnimFrame(doMarioEnter);
+    AnimeID = requestAnimFrame(doMarioEnter);
   } else {
-    Mario.offset = 40;
+    Mario.init4playing(timeStamp);
     GameStatus = 2;
-    requestAnimFrame(doMarioPlay);
+    AnimeID = requestAnimFrame(doMarioPlay);
   }
 }
 
 // Let Mario play the music!
-function doMarioPlay(timestamp) {
-  // ToDo
+function doMarioPlay(timeStamp) {
+  bombTimer.checkAndFire(timeStamp);
+  Mario.play(timeStamp);
+  if (GameStatus == 2) {
+    if (Mario.pos - 2 != CurScore.end) {
+      AnimeID = requestAnimFrame(doMarioPlay);
+    } else if (CurScore.loop) {
+      CurPos = 0;
+      Mario.pos = 1;
+      Mario.x = 40;
+      Mario.init4playing(timeStamp);
+      AnimeID = requestAnimFrame(doMarioPlay);
+    } else {
+      // Calls stopListener without a event arg
+      stopListener.call(document.getElementById('stop'));
+    }
+  }
 }
 
 // Let Mario leave from the stage
 function doMarioLeave(timeStamp) {
   bombTimer.checkAndFire(timeStamp);
-  drawScore(CurPos, CurScore.notes);
+  drawScore(CurPos, CurScore.notes, Mario.scroll); // ToDo: Decide offset!
   Mario.leave(timeStamp);
 
   if (Mario.x < 247) {
@@ -762,13 +944,15 @@ function doMarioLeave(timeStamp) {
 
 // Initialize Score
 function initScore() {
-  var tmpa = [];
-  for (var i = 0; i < DEFAULTMAXBARS; i++) tmpa[i] = [];
-  CurScore.notes = tmpa;
-  CurMaxBars = DEFAULTMAXBARS;
-  CurScore.beats = 4;
-  CurScore.loop = false;
-  CurScore.end = DEFAULTMAXBARS - 1;
+  //var tmpa = [];
+  //for (var i = 0; i < DEFAULTMAXBARS; i++) tmpa[i] = [];
+  //CurScore.notes = tmpa;
+  //CurMaxBars = DEFAULTMAXBARS;
+  //CurScore.beats = 4;
+  //CurScore.loop = false;
+  //document.getElementById("loop").reset();
+  //CurScore.end = DEFAULTMAXBARS - 1;
+  CurScore = EmbeddedSong[0];
 }
 
 // sliceImage(img, width, height)
@@ -799,3 +983,35 @@ function sliceImage(img, width, height) {
   }
   return result;
 }
+
+EmbeddedSong = [];
+EmbeddedSong[0] = {"notes":[[1026,2313],[1026,2313],[],[1026,2313],
+  [],[1028,2315],[1026,2313],[],[1024,2311],[],[],[],[517,3591,265],
+  [],[],[],[2818,2820,267],[],[3072,3595],[3072,2818,3595],
+  [2817,2820,267],[],[3072,3592],[3072,2817,3591],[2816,2819,267],[],
+  [3072,3591],[2816,1287,3595],[2817,1286,1288],[262,1288,1290],
+  [1286,3591,1288],[1285,1287,266],[2,3595,3084],[],[256],[257,3595],
+  [4,3593,3084],[],[256],[257,7,3593],[6,3592,3084],[4],[256,3592],
+  [257,4,3590],[3084],[256],[],[257,6,3591],[7,3084],[3591],
+  [256,4,3592],[257],[4,3593,3084],[],[0,3594],[257],[2,3591],[1031],
+  [256,1030],[3,1029,3592],[1028],[1027,262],[1026],[1025,263],
+  [1026,266,3595],[7],[2050,4],[7,266,3595],[1028,3593,266],[7],
+  [2050,4],[5,1031,3593],[1030,3592,266],[1028,6,2568],[4],
+  [1,1028,3590],[264],[2049,2,260],[3,260],[261,1030],[1031,266],
+  [3584,2,7],[1028],[1,5,7],[1025,3591],[1026],[1027],[],[1028],
+  [258,3588],[],[260,3595],[261,3595],[],[261,267],[],[]],
+  "beats":4,"loop":false,"end":96,"tempo":"370"};
+
+EmbeddedSong[1] = {"notes":[[772,779],[768],[770,779],[768],[772,775],
+  [768],[770,775],[768],[772,774],[769],[772,774],[769],[768,770,775],
+  [],[],[],[769,774,776],[772],[769,774,776],[772],[770,775,777],
+  [772],[770,775,777],[772],[771,773,778],[775],[771,778],[773],
+  [771,777,779],[],[],[],[775,777],[768],[775,777],[768],[776,778],
+  [768],[776,778],[768],[777,779],[768],[777,779],[768],[778,780],
+  [],[],[],[775],[768,772],[775],[768,772],[776],[768,772],[776],
+  [768,772],[777],[768,772],[777],[768,772],[771,773,778],[],[],[],
+  [777,779],[779],[777,779],[779],[775,777],[777],[775,777],[777],
+  [774,776],[776],[774,776],[776],[768,775,777],[],[],[],[774,776],
+  [776],[774,776],[773],[772,777],[775],[772,777],[],[771,775,778],
+  [],[771,775,778],[],[772,777,779],[],[],[],[]],
+  "beats":4,"loop":true,"end":96,"tempo":"178"};
