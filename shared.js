@@ -44,21 +44,51 @@ return  window.requestAnimationFrame ||
 function SoundEntity(path) {
   this.path = path;
   this.buffer = null;
+  this.prevChord = [];
+  this.diff = [14, 12, 11, 9, 7, 6, 4, 2, 0, -1, -3, -5, -6];
 }
 
 // SoundEntity#play
 // The all wav files are recorded in the tone F.
 // You should choose correct playback rate to play a music.
 SoundEntity.prototype.play = function(scale, delay) {
-  var diff = [14, 12, 11, 9, 7, 6, 4, 2, 0, -1, -3, -5, -6];
   var source = AC.createBufferSource();
-  var semitone = diff[scale];
+  var semitone = this.diff[scale];
   if (delay == undefined) delay = 0;
   source.buffer = this.buffer;
   source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
   source.connect(AC.destination);
   source.start(delay);
 };
+
+// Play a chord
+//   In fact, can be a single note.
+//   Purpose is cancel the sounds in previous bar
+//   if the kind of note is the same.
+//   Even the chord will be canceled (stoped) playing
+//   SNES has channels limit, so that succesive notes
+//   cancels previous note when next note comes.
+//   Long note like Yoshi can be canceled often
+//   BufferSource.stop won't throw an error even if the
+//   previous note has already ended.
+SoundEntity.prototype.playChord = function(noteList, delay) {
+  // Cancel previous chord first
+  for (var i = 0; i < this.prevChord.length; i++) {
+    this.prevChord[i].stop();
+  }
+  this.prevChord = [];
+  if (delay == undefined) delay = 0;
+  // I heard that Array#map is slower than for loop because of costs of calling methods.
+  for (var i = 0; i < noteList.length; i++) {
+    var source = AC.createBufferSource();
+    var semitone = this.diff[noteList[i]];
+    source.buffer = this.buffer;
+    source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
+    source.connect(AC.destination);
+    source.start(delay);
+    this.prevChord.push(source);
+  }
+}
 
 SoundEntity.prototype.load = function() {
   // Load buffer asynchronously
@@ -161,17 +191,22 @@ MarioClass.prototype.init4playing = function(timeStamp) {
   this.state == 1;
   this.spb = 60  * 1000 / CurScore.tempo; // [ms/beat]
   this.nextNoteOn = timeStamp + this.spb;
-    console.log("nextNoteOn = " + this.nextNoteOn + " timeStamp = "+ timeStamp)
 };
 
 MarioClass.prototype.play = function(timeStamp) {
   function scheduleAndPlay(notes, time) {
     if (time < 0) time = 0;
+    if (notes == undefined || notes.length == 0) return;
+    var dic = {};
     for (var i = 0; i < notes.length; i++) {
       var note = notes[i];
       var num = note >> 8;
       var scale = note & 0xFF;
-      SOUNDS[num].play(scale, time / 1000); // [ms] -> [s]
+      if  (!dic[num]) dic[num] = [scale];
+      else dic[num].push(scale);
+    }
+    for (var i in dic) {
+      SOUNDS[i].playChord(dic[i], time / 1000); // [ms] -> [s]
     }
   }
   var diff = timeStamp - this.start; // both stamp and start are [ms]
@@ -222,7 +257,6 @@ MarioClass.prototype.play = function(timeStamp) {
       // 32 dots in t[sec/1beat]
       this.x = diff * (32 * CurScore.tempo / 60000) - (CurPos + 1) * 32 + 72;
     }
-    console.log("this.x = " + this.x);
   }
   drawScore(CurPos, CurScore.notes, this.scroll);
   this.draw();
@@ -237,7 +271,15 @@ MarioClass.prototype.leave = function(timeStamp) {
   if (this.start == 0) this.start = timeStamp;
 
   var diff = timeStamp - this.start;
-  this.x = Math.floor(diff / 4) + this.offset;
+  if (this.scroll > 0 && this.scroll < 32) {
+    this.scroll += Math.floor(diff / 4); 
+    if (this.scroll > 32) {
+      this.x += this.scroll - 32;
+      this.scroll = 0;
+      CurPos++;
+    }
+  } else
+    this.x = Math.floor(diff / 4) + this.offset;
   if (Math.floor(diff / 100) % 2 == 0) {
     this.state =  8;
     this.draw();
@@ -445,10 +487,11 @@ function drawBarNumber(gridX, barnum) {
     nums.push(barnum % 10);
     barnum = Math.floor(barnum / 10);
   }
-  if (nums.length == 1) x += 2 * MAGNIFY;
-  for (var i = 0; i <= nums.length; i++) {
+  var len = nums.length;
+  if (len == 1) x += 2 * MAGNIFY;
+  while (nums.length > 0) {
     var n = nums.pop();
-    var width = (n == 1) ? 4 : ((n == 4) ? 5 : 4);
+    var width = (n == 4) ? 5 : 4;
     L2C.drawImage(NUMBERS[n], x, y, 5 * MAGNIFY, 7 * MAGNIFY);
     x += width * MAGNIFY;
   }
@@ -546,7 +589,7 @@ SCREEN.addEventListener("dragover", function(e) {
 // http://www.html5rocks.com/en/tutorials/es6/promises/
 SCREEN.addEventListener("drop", function(e) {
   e.preventDefault();
-  initScore();
+  fullInitScore();
   // function to read given file objets.
   // Input is a instance of a File object.
   // Returns a instance of a Promise.
@@ -576,7 +619,7 @@ SCREEN.addEventListener("drop", function(e) {
     }, values);
     
     var s = values.SCORE;
-    var i = 0, count = 0;
+    var i = 0, count = CurScore.end;
     // MSQ format is variable length string.
     out:
     while (i < s.length) {
@@ -594,10 +637,12 @@ SCREEN.addEventListener("drop", function(e) {
       CurScore.notes[count++] = bar;
     }
 
-    CurScore.end   = parseInt(values.END) - 1;
+    CurScore.end   += parseInt(values.END) - 1;
     CurScore.tempo = values.TEMPO;
+    document.getElementById('tempo').value = values.TEMPO;
     CurScore.beats = (values.TIME44 == "TRUE") ? 4 : 3;
-    if (values.LOOP == "TRUE" && CurScore.loop == false) {
+    var lf = (values.LOOP == "TRUE") ? true : false;
+    if (CurScore.loop != lf) {
       document.getElementById("loop").dispatchEvent(
           new Event("click"));
     }
@@ -612,9 +657,11 @@ SCREEN.addEventListener("drop", function(e) {
     }).catch(function(err) {
       alert("Loading MSQ failed: " + err.message);
     }).then(function() {
-      //ToDo
-      //Put End mark
-      //Scroll to 1st bar
+      var r = document.getElementById('scroll');
+      CurMaxBars = CurScore.end + 1;
+      r.max = CurMaxBars - 6;
+      r.value = 0;
+      CurPos = 0;
     });
   }, Promise.resolve());
 
@@ -940,6 +987,16 @@ function doMarioLeave(timeStamp) {
 
     requestAnimFrame(doAnimation);
   }
+}
+
+// Full Initialize Score
+// - Just for file loading...
+function fullInitScore() {
+  CurScore.notes = [];
+  CurMaxBars = 0;
+  CurScore.beats = 4;
+  CurScore.loop = false;
+  CurScore.end = 0;
 }
 
 // Initialize Score
