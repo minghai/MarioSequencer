@@ -311,7 +311,7 @@ easyTimer.prototype.checkAndFire = function(time) {
 
 // Asynchronous load of sounds
 SOUNDS = [];
-for (i = 1; i < 19; i++) {
+for (i = 1; i < 21; i++) {
   var tmp = '0';
   tmp += i.toString();
   var file = "wav/sound" + tmp.substr(-2) + ".wav";
@@ -379,6 +379,10 @@ playbtnimg.src = "image/play_button.png";
 // Prepare the Stop button
 stopbtnimg = new Image();
 stopbtnimg.src = "image/stop_button.png";
+
+// Prepare the CLEAR button
+clearimg = new Image();
+clearimg.src = "image/clear_button.png";
 
 // Prepare tempo range slider thumb image
 thumbimg = new Image();
@@ -637,7 +641,7 @@ SCREEN.addEventListener("drop", function(e) {
       CurScore.notes[count++] = bar;
     }
 
-    CurScore.end   += parseInt(values.END) - 1;
+    CurScore.end  += parseInt(values.END) - 1;
     CurScore.tempo = values.TEMPO;
     document.getElementById('tempo').value = values.TEMPO;
     CurScore.beats = (values.TIME44 == "TRUE") ? 4 : 3;
@@ -649,6 +653,18 @@ SCREEN.addEventListener("drop", function(e) {
   };
   // FileList to Array for Mapping
   var files = [].slice.call(e.dataTransfer.files);
+  // Support Mr.Phenix's files. He numbered files with decimal numbers :-)
+  // http://music.geocities.jp/msq_phenix/
+  // For example, suite15.5.msq must be after the suite15.msq
+  files.sort(function(a,b) {
+    var n1 = a.name;
+    var n2 = b.name;
+    function strip(name) {
+      n = /\d+\.\d+|\d+/.exec(name)[0];
+      return parseFloat(n);
+    }
+    return strip(n1) - strip(n2);
+  });
   files.map(readFile).reduce(function(chain, fp) {
     return chain.then(function() {
       return fp;
@@ -896,8 +912,40 @@ function onload() {
   });
   CONSOLE.appendChild(b);
 
+  // Prepare CLEAR button (200, 176)
+  var b = makeButton(200, 176, 34, 16);
+  b.id = 'clear';
+  b.images = sliceImage(clearimg, 34, 16);
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  b.addEventListener("click", clearListener);
+  CONSOLE.appendChild(b);
+  s.sheet.insertRule('#clear:focus {outline: none !important;}', 0);
+
   // Start Animation
   requestAnimFrame(doAnimation);
+}
+
+// Clear Button Listener
+function clearListener(e) {
+  this.style.backgroundImage = "url(" + this.images[1].src + ")";
+  SOUNDS[19].play(8);
+  var self = this;
+  function makePromise(num) {
+    return new Promise(function(resolve, reject) {
+      setTimeout(function() {
+        self.style.backgroundImage = "url(" + self.images[num].src + ")";
+        resolve()
+      }, 150);
+    });
+  }
+
+  makePromise(2).then(function () {
+    return makePromise(1);
+  }).then(function () {
+    return makePromise(0);
+  }).then(function () {
+    initScore();
+  });
 }
 
 // Play Button Listener
@@ -1009,7 +1057,12 @@ function initScore() {
   //CurScore.loop = false;
   //document.getElementById("loop").reset();
   //CurScore.end = DEFAULTMAXBARS - 1;
-  CurScore = EmbeddedSong[0];
+  CurScore = clone(EmbeddedSong[0]);
+}
+
+// Easiest and Fastest way to clone
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
 }
 
 // sliceImage(img, width, height)
