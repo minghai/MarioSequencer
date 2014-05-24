@@ -1,7 +1,7 @@
 // GLOBAL VARIABLES
 //   Constants: Full capital letters
 //   Variables: CamelCase
-AC = new webkitAudioContext();
+AC = (window.AudioContext) ? new AudioContext() : new webkitAudioContext();
 SEMITONERATIO = Math.pow(2, 1/12);
 MAGNIFY = 3;
 CHARSIZE = 16 * MAGNIFY;
@@ -63,7 +63,7 @@ SoundEntity.prototype.play = function(scale, delay) {
 
 // Play a chord
 //   In fact, can be a single note.
-//   Purpose is cancel the sounds in previous bar
+//   Purpose is to cancel the sounds in previous bar
 //   if the kind of note is the same.
 //   Even the chord will be canceled (stoped) playing
 //   SNES has channels limit, so that succesive notes
@@ -84,6 +84,11 @@ SoundEntity.prototype.playChord = function(noteList, delay) {
     var semitone = this.diff[noteList[i]];
     source.buffer = this.buffer;
     source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
+
+    // Compressor: Suppress harsh distortions
+    //var compressor = AC.createDynamicsCompressor();
+    //source.connect(compressor);
+    //compressor.connect(AC.destination);
     source.connect(AC.destination);
     source.start(delay);
     this.prevChord.push(source);
@@ -133,10 +138,12 @@ function MarioClass() {
 
 MarioClass.prototype.init = function() {
   this.x = -16;
-  this.offset = -16;
+  this.pos = 0;
   this.start = 0;
   this.state = 0;
-  this.pos = 0;
+  this.scroll = 0;
+  this.offset = -16;
+  this.isJumping = false;
 };
 
 MarioClass.prototype.enter = function(timeStamp) {
@@ -176,7 +183,7 @@ MarioClass.prototype.init4leaving = function() {
  * (Famous fastest song, Hatsune Miku no Shoshitsu is 245 (* 4 < 1000))
  *
  * At first, Mario runs to the center of the stage.
- * Then, Mario will be fixed at the position.
+ * Then Mario will be fixed at the position.
  * Instead, the score is scrolling from then.
  * When the last bar appears, scroll stops and Mario runs again.
  *
@@ -191,9 +198,16 @@ MarioClass.prototype.init4playing = function(timeStamp) {
   this.state == 1;
   this.spb = 60  * 1000 / CurScore.tempo; // [ms/beat]
   this.nextNoteOn = timeStamp + this.spb;
+  this.checkMarioShouldJump();
+};
+
+MarioClass.prototype.checkMarioShouldJump = function() {
+  var notes = CurScore.notes[this.pos - 1];
+  this.isJumping = (notes != undefined && notes.length > 0); 
 };
 
 MarioClass.prototype.play = function(timeStamp) {
+  // function for setting a chord to SoundEntities and playing it
   function scheduleAndPlay(notes, time) {
     if (time < 0) time = 0;
     if (notes == undefined || notes.length == 0) return;
@@ -209,10 +223,10 @@ MarioClass.prototype.play = function(timeStamp) {
       SOUNDS[i].playChord(dic[i], time / 1000); // [ms] -> [s]
     }
   }
+
   var diff = timeStamp - this.start; // both stamp and start are [ms]
   var left = this.nextNoteOn - timeStamp;
 
-  // ToDo: set status jump if needed
   this.state = (Math.floor(diff / 100) % 2 == 0) ? 1 : 0;
   var scroll = document.getElementById('scroll');
 
@@ -223,6 +237,7 @@ MarioClass.prototype.play = function(timeStamp) {
       this.x = (16 + 32 * this.pos - 8);
       this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
       scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+      this.checkMarioShouldJump();
     } else {
       // 32 dots in t[sec/1beat]
       this.x = diff * (32 * CurScore.tempo / 60000) + this.offset;
@@ -239,6 +254,7 @@ MarioClass.prototype.play = function(timeStamp) {
       this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
       //  Schedule Play!
       scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+      this.checkMarioShouldJump();
     } else {
       var s = diff * (32 * CurScore.tempo / 60000) - (120 - 40);
       this.scroll = Math.round(s % 32);
@@ -253,6 +269,7 @@ MarioClass.prototype.play = function(timeStamp) {
       this.x = (16 + 32 * (this.pos - CurPos) - 8);
       this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
       scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+      this.checkMarioShouldJump();
     } else {
       // 32 dots in t[sec/1beat]
       this.x = diff * (32 * CurScore.tempo / 60000) - (CurPos + 1) * 32 + 72;
@@ -262,9 +279,43 @@ MarioClass.prototype.play = function(timeStamp) {
   this.draw();
 };
 
+// Mario Jump
+// 19 = ax^2 + bx + c (x = 16)
+//  0 = ax^2 + bx + c (x = 0, 32)
+//  c = 0
+//  x(ax + b) =  0 (x =  0, 32)
+//  x(ax + b) = 19 (x = 16)
+//  32(32a + b) = 0
+//  32a + b = 0
+//  16(16a + b) = 19
+//  16a + b = 19/16
+//  16a = -19/16
+//  a = -19/256
+//  32 * (-19/256) + b = 0
+//  b = 608/256
+MarioClass.prototype.jump = function(x) {
+  // var h = [ 0,  3,  5,  7, 10, 12, 13, 15, 17, 18, 19, 20, 21, 21, 22, 22, 22,
+  //         22, 22, 21, 21, 20, 19, 18, 17, 15, 13, 12, 10,  7,  5,  3,  0];
+  var h = [0, 2, 4, 6, 8, 10, 12, 13, 14, 15, 16, 17, 18, 18, 19, 19, 19,
+          19, 19, 18, 18, 17, 16, 15, 14, 13, 12, 10, 8, 6, 4, 2, 0]
+  return h[Math.round(x) % 32];
+}
+
 MarioClass.prototype.draw = function() {
+  var y = (41 - 22);
+  if (this.isJumping) {
+    this.state = 2;
+    if (this.x == 120) { // In scroll mode
+      if (this.scroll != 16) { // scroll == 16 is just on the bar, 0 and 32 is on the center of between bars
+        y -= this.jump(this.scroll > 16 ? this.scroll - 16 : this.scroll + 16);
+      } /* if scroll == 16 then Mario should be on the ground */
+    } else { // Running to the center, or leaving to the goal
+      y -= this.jump(Math.round((this.x - 8) % 32));
+    }
+  }
+   
   L2C.drawImage(this.images[this.state],
-    this.x * MAGNIFY, (41 - 22) * MAGNIFY);
+    this.x * MAGNIFY, y * MAGNIFY);
 };
 
 MarioClass.prototype.leave = function(timeStamp) {
@@ -388,6 +439,10 @@ clearimg.src = "image/clear_button.png";
 thumbimg = new Image();
 thumbimg.src = "image/slider_thumb.png";
 
+// Prepare beat button
+beatimg = new Image();
+beatimg.src = "image/beat_button.png";
+
 // Prepare the repeat marks
 repeatimg = new Image();
 repeatimg.src = "image/repeat_head.png";
@@ -431,9 +486,11 @@ function drawScore(pos, notes, scroll) {
   }
 
   //ORANGE #F89000
+  var beats = CurScore.beats;
   var dashList = [MAGNIFY, MAGNIFY];
-  // orange = 2, 1, 0, 3, 2, 1, 0, 3, .....
-  var orange = 3 - ((pos + 1) % 4);
+  // orange = 2, 1, 0, 3, 2, 1, 0, 3, ..... (if beats = 4)
+  //        = 2, 1, 0, 2, 1, 0, 2, 1, ..... (if beats = 3)
+  var orange = (beats == 4) ? 3 - ((pos + 1) % 4) : 2 - ((pos + 3) % 3);
   var i = (pos < 2) ? (2 - pos) : 0;
   for (; i < 9; i++) {
     var x = (16 + 32 * i - scroll) * MAGNIFY;
@@ -447,13 +504,12 @@ function drawScore(pos, notes, scroll) {
     L2C.beginPath();
     L2C.setLineDash(dashList);
     L2C.lineWidth = MAGNIFY;
-    if (i % 4 == orange) {
-      if (GameStatus == 0) drawBarNumber(i, barnum / 4 + 1);
-      L2C.strokeStyle = '#F88000';
+    if (i % beats == orange) {
+      if (GameStatus == 0) drawBarNumber(i, barnum / beats + 1);
+      L2C.strokeStyle = '#F89000';
     } else {
       L2C.strokeStyle = '#A0C0B0';
     }
-    L2C.strokeStyle = (i % 4 == orange) ? '#F89000' : '#A0C0B0';
     L2C.moveTo(x,  41 * MAGNIFY);
     L2C.lineTo(x, 148 * MAGNIFY);
     L2C.stroke();
@@ -921,6 +977,48 @@ function onload() {
   CONSOLE.appendChild(b);
   s.sheet.insertRule('#clear:focus {outline: none !important;}', 0);
 
+  // Prepare Beat buttons w=14, h=15 (81, 203) (96, 203)
+  // (1) Disable self, Enable the other
+  // (2) Change both images
+  // (3) Play Sound
+  // (4) Set CurScore.beat
+  function makeExclusiveFunction(doms, num, success) {
+    var clone = doms.slice(0); // Clone the Array
+    var self = clone[num];
+    clone.splice(num, 1); // Remove No.i element
+    var theOthers = clone;
+
+    return function(e) {
+      SOUNDS[17].play(8);
+      self.disabled = true;
+      self.style.backgroundImage = "url(" + self.images[1].src + ")";
+      theOthers.map(function (x) {
+        x.disabled = false;
+        x.style.backgroundImage = "url(" + x.images[0].src + ")";
+      });
+      success(self);
+    };
+  }
+
+  var imgs = sliceImage(beatimg, 14, 15);
+  var b1 = makeButton(81, 203, 14, 15);
+  b1.id = '3beat';
+  b1.beats = 3;
+  b1.images = [imgs[0], imgs[1]];
+  b1.style.backgroundImage = "url(" + b1.images[0].src + ")";
+  b1.disabled = false;
+  CONSOLE.appendChild(b1);
+  var b2 = makeButton(96, 203, 14, 15);
+  b2.id = '4beat';
+  b2.beats = 4;
+  b2.images = [imgs[2], imgs[3]];
+  b2.style.backgroundImage = "url(" + b2.images[1].src + ")";
+  b2.disabled = true;
+  CONSOLE.appendChild(b2);
+  var func = function(self) {CurScore.beats = self.beats};
+  b1.addEventListener("click", makeExclusiveFunction([b1, b2], 0, func));
+  b2.addEventListener("click", makeExclusiveFunction([b1, b2], 1, func));
+
   // Start Animation
   requestAnimFrame(doAnimation);
 }
@@ -960,6 +1058,7 @@ function playListener(e) {
   document.getElementById("toLeft").disabled  = true;
   document.getElementById("toRight").disabled = true;
   document.getElementById("scroll").disabled  = true;
+  document.getElementById("clear").disabled   = true;
 
   GameStatus = 1; // Mario Entering the stage
   CurPos = 0;     // doAnimation will draw POS 0 and stop
@@ -1003,7 +1102,7 @@ function doMarioPlay(timeStamp) {
   bombTimer.checkAndFire(timeStamp);
   Mario.play(timeStamp);
   if (GameStatus == 2) {
-    if (Mario.pos - 2 != CurScore.end) {
+    if (Mario.pos - 2 != CurScore.end - 1) {
       AnimeID = requestAnimFrame(doMarioPlay);
     } else if (CurScore.loop) {
       CurPos = 0;
@@ -1032,6 +1131,7 @@ function doMarioLeave(timeStamp) {
     document.getElementById("toRight").disabled = false;
     document.getElementById("scroll").disabled  = false;
     document.getElementById("play").disabled    = false;
+    document.getElementById('clear').disabled   = false;
 
     requestAnimFrame(doAnimation);
   }
@@ -1057,7 +1157,7 @@ function initScore() {
   //CurScore.loop = false;
   //document.getElementById("loop").reset();
   //CurScore.end = DEFAULTMAXBARS - 1;
-  CurScore = clone(EmbeddedSong[0]);
+  CurScore = clone(EmbeddedSong[1]);
 }
 
 // Easiest and Fastest way to clone
@@ -1125,3 +1225,19 @@ EmbeddedSong[1] = {"notes":[[772,779],[768],[770,779],[768],[772,775],
   [776],[774,776],[773],[772,777],[775],[772,777],[],[771,775,778],
   [],[771,775,778],[],[772,777,779],[],[],[],[]],
   "beats":4,"loop":true,"end":96,"tempo":"178"};
+
+EmbeddedSong[2] = {"notes":[[266,3595],[3072,2,7],[3591,3081],[3072,2,7],
+  [2305,3590,266],[2305,2,7],[1,2307,3594],[3078],[266,3595],[3072,2,7],
+  [3591,3081],[3072,2,7],[2305,3590,266],[2305,3,7],[1,2307,3594],[],
+  [1028,3079,3595],[3072,2,7],[1028,3078,3591],[1026,261,7],[1024,267],
+  [],[1543],[],[1281,3594],[1,6],[1281,3590],[1282,6],[1283],[],[1798],
+  [],[1027,3079,3594],[3072,1,6],[1027,3590,3082],[1025,261,6],[1030,267],
+  [],[2055,2059],[],[1280,1285,3595],[2,7],[1280,1285,3591],[1281,2,1286],
+  [1282,1287,266],[2571],[],[],[1287,779],[775],[1287,777],[772,1287],
+  [1284,775,264],[2306,3077],[2306,264],[2308,3077],[1286,2826],[2822],
+  [1286,2824],[2819,1286],[1284,2822,264],[2305,3077],[2305,264],
+  [2307,3077],[1285,3335,264],[3331],[1285,3335],[3329,1285],
+  [1283,1029,264],[],[519],[],[2304,1282,1028],[2304,1282,1028],
+  [2304,1282,1028],[2305,1283,1029],[2306,1284,1030],[],[2304,1282,1028],
+  [],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]],
+  "beats":4,"loop":true,"end":80,"tempo":"287"};
