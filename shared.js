@@ -163,6 +163,7 @@ MarioClass.prototype.enter = function(timeStamp) {
 MarioClass.prototype.init4leaving = function() {
   this.offset = this.x;
   this.start = 0;
+  this.isJumping = false;
 };
 
 /*
@@ -280,22 +281,7 @@ MarioClass.prototype.play = function(timeStamp) {
 };
 
 // Mario Jump
-// 19 = ax^2 + bx + c (x = 16)
-//  0 = ax^2 + bx + c (x = 0, 32)
-//  c = 0
-//  x(ax + b) =  0 (x =  0, 32)
-//  x(ax + b) = 19 (x = 16)
-//  32(32a + b) = 0
-//  32a + b = 0
-//  16(16a + b) = 19
-//  16a + b = 19/16
-//  16a = -19/16
-//  a = -19/256
-//  32 * (-19/256) + b = 0
-//  b = 608/256
 MarioClass.prototype.jump = function(x) {
-  // var h = [ 0,  3,  5,  7, 10, 12, 13, 15, 17, 18, 19, 20, 21, 21, 22, 22, 22,
-  //         22, 22, 21, 21, 20, 19, 18, 17, 15, 13, 12, 10,  7,  5,  3,  0];
   var h = [0, 2, 4, 6, 8, 10, 12, 13, 14, 15, 16, 17, 18, 18, 19, 19, 19,
           19, 19, 18, 18, 17, 16, 15, 14, 13, 12, 10, 8, 6, 4, 2, 0]
   return h[Math.round(x) % 32];
@@ -442,6 +428,10 @@ thumbimg.src = "image/slider_thumb.png";
 // Prepare beat button
 beatimg = new Image();
 beatimg.src = "image/beat_button.png";
+
+// Prepare Song buttons
+songimg = new Image();
+songimg.src = "image/song_buttons.png";
 
 // Prepare the repeat marks
 repeatimg = new Image();
