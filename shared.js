@@ -1,3 +1,8 @@
+/*
+ *  Mario Sequencer Web edition
+ *    Programmed by minghai (http://github.com/minghai)
+ */
+
 // GLOBAL VARIABLES
 //   Constants: Full capital letters
 //   Variables: CamelCase
@@ -225,7 +230,7 @@ MarioClass.prototype.play = function(timeStamp) {
     }
   }
 
-  var diff = timeStamp - this.start; // both stamp and start are [ms]
+  var diff = timeStamp - this.start; // both timestamp and start are [ms]
   var left = this.nextNoteOn - timeStamp;
 
   this.state = (Math.floor(diff / 100) % 2 == 0) ? 1 : 0;
@@ -835,12 +840,49 @@ function onload() {
   delete repeatimg;
   EndMark = RepeatMarks[2];
 
-  // Prepare current empty score
-  initScore();
+  // Prepare Scroll Range
+  var r = document.createElement('input');
+  r.id = 'scroll';
+  r.type = 'range';
+  r.value = 0;
+  r.max = CurMaxBars - 6;
+  r.min = 0;
+  r.step = 1;
+  r.style['-webkit-appearance']='none';
+  r.style['border-radius'] = '0px';
+  r.style['background-color'] = '#F8F8F8';
+  r.style['box-shadow'] = 'inset 0 0 0 #000';
+  r.style['vertical-align'] = 'middle';
+  r.style.position = 'absolute';
+  r.style.margin = 0;
+  r.style.left = 191 * MAGNIFY + 'px';
+  r.style.top  = 159 * MAGNIFY + 'px';
+  r.style.width = 50 * MAGNIFY + 'px';
+  r.style.height = 7 * MAGNIFY + 'px';
+  r.addEventListener("input", function(e) {
+    CurPos = parseInt(this.value);
+  });
+  CONSOLE.appendChild(r);
+
+  // It's very hard to set values to a pseudo element with JS.
+  // http://pankajparashar.com/posts/modify-pseudo-elements-css/
+  s.sheet.insertRule('#scroll::-webkit-slider-thumb {' +
+	  "-webkit-appearance: none !important;" +
+	  "border-radius: 0px;" +
+	  "background-color: #A870D0;" +
+	  "box-shadow:inset 0 0 0px;" +
+	  "border: 0px;" +
+	  "width: " + 5 * MAGNIFY + "px;" +
+	  "height:" + 7 * MAGNIFY + 'px;}', 0
+  );
+  s.sheet.insertRule('#scroll:focus {outline: none !important;}', 0);
 
   // Make number images from the number sheet
   NUMBERS = sliceImage(numimg, 5, 7);
   delete numimg;
+
+  // Prepare current empty score
+  initScore();
 
   // Initializing Screen
   CurPos = 0;
@@ -896,44 +938,6 @@ function onload() {
 	  "height:" + 8 * MAGNIFY + 'px;}', 0
   );
   s.sheet.insertRule('#tempo:focus {outline: none !important;}', 0);
-
-
-  // Prepare Scroll Range
-  var r = document.createElement('input');
-  r.id = 'scroll';
-  r.type = 'range';
-  r.value = 0;
-  r.max = CurMaxBars - 6;
-  r.min = 0;
-  r.step = 1;
-  r.style['-webkit-appearance']='none';
-  r.style['border-radius'] = '0px';
-  r.style['background-color'] = '#F8F8F8';
-  r.style['box-shadow'] = 'inset 0 0 0 #000';
-  r.style['vertical-align'] = 'middle';
-  r.style.position = 'absolute';
-  r.style.margin = 0;
-  r.style.left = 191 * MAGNIFY + 'px';
-  r.style.top  = 159 * MAGNIFY + 'px';
-  r.style.width = 50 * MAGNIFY + 'px';
-  r.style.height = 7 * MAGNIFY + 'px';
-  r.addEventListener("input", function(e) {
-    CurPos = parseInt(this.value);
-  });
-  CONSOLE.appendChild(r);
-
-  // It's very hard to set values to a pseudo element with JS.
-  // http://pankajparashar.com/posts/modify-pseudo-elements-css/
-  s.sheet.insertRule('#scroll::-webkit-slider-thumb {' +
-	  "-webkit-appearance: none !important;" +
-	  "border-radius: 0px;" +
-	  "background-color: #A870D0;" +
-	  "box-shadow:inset 0 0 0px;" +
-	  "border: 0px;" +
-	  "width: " + 5 * MAGNIFY + "px;" +
-	  "height:" + 7 * MAGNIFY + 'px;}', 0
-  );
-  s.sheet.insertRule('#scroll:focus {outline: none !important;}', 0);
 
   // Prepare range's side buttons for inc/decrements
   var b = makeButton(184, 158, 7, 9);
@@ -1009,6 +1013,30 @@ function onload() {
   b1.addEventListener("click", makeExclusiveFunction([b1, b2], 0, func));
   b2.addEventListener("click", makeExclusiveFunction([b1, b2], 1, func));
 
+  // Preapre Song Buttons (136, 202) 15x17, 160 - 136 = 24
+  var imgs = sliceImage(songimg, 15, 17);
+  var b = ['frog','beak','1up'].map(function (id, idx) {
+    var b = makeButton(136 + 24 * idx, 202, 15, 17);
+    b.id = id;
+    b.num = idx;
+    b.images = imgs.slice(idx * 3, idx * 3 + 2);
+    b.style.backgroundImage = "url(" + b.images[0].src + ")";
+    b.disabled = false;
+    CONSOLE.appendChild(b);
+    return b;
+  });
+  var func = function (self) {
+    if (CurScore.loop !=  EmbeddedSong[self.num].loop) {
+      document.getElementById("loop").dispatchEvent(
+          new Event("click"));
+    }
+    CurScore = clone(EmbeddedSong[self.num]);
+    document.getElementById("tempo").value = CurScore.tempo;
+  };
+  b[0].addEventListener("click", makeExclusiveFunction(b, 0, func));
+  b[1].addEventListener("click", makeExclusiveFunction(b, 1, func));
+  b[2].addEventListener("click", makeExclusiveFunction(b, 2, func));
+
   // Start Animation
   requestAnimFrame(doAnimation);
 }
@@ -1033,6 +1061,8 @@ function clearListener(e) {
     return makePromise(0);
   }).then(function () {
     initScore();
+    drawScore(0, CurScore.notes, 0);
+    CurPos = 0;
   });
 }
 
@@ -1135,19 +1165,24 @@ function fullInitScore() {
   CurScore.beats = 4;
   CurScore.loop = false;
   CurScore.end = 0;
+  CurScore.tempo = 100;
 }
 
 // Initialize Score
 function initScore() {
-  //var tmpa = [];
-  //for (var i = 0; i < DEFAULTMAXBARS; i++) tmpa[i] = [];
-  //CurScore.notes = tmpa;
-  //CurMaxBars = DEFAULTMAXBARS;
-  //CurScore.beats = 4;
-  //CurScore.loop = false;
-  //document.getElementById("loop").reset();
-  //CurScore.end = DEFAULTMAXBARS - 1;
-  CurScore = clone(EmbeddedSong[1]);
+  var tmpa = [];
+  for (var i = 0; i < DEFAULTMAXBARS; i++) tmpa[i] = [];
+  CurScore.notes = tmpa;
+  CurMaxBars = DEFAULTMAXBARS;
+  var s = document.getElementById("scroll");
+  s.max = DEFAULTMAXBARS - 6;
+  s.value = 0;
+  CurScore.beats = 4;
+  CurScore.loop = false;
+  document.getElementById("loop").reset();
+  CurScore.end = DEFAULTMAXBARS - 1;
+  CurScore.tempo = 90;
+  //CurScore = clone(EmbeddedSong[1]);
 }
 
 // Easiest and Fastest way to clone
