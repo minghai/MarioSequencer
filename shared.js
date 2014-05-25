@@ -20,6 +20,7 @@ CurChar = 0;
 CurPos = 0;
 CurScore = {};
 DEFAULTMAXBARS = 24 * 4 + 1; // 24 bars by default
+DEFAULTTEMPO = 100;
 CurMaxBars = DEFAULTMAXBARS;
 Mario = null; // Mamma Mia!
 AnimeID = 0; // ID for cancel animation
@@ -342,10 +343,11 @@ function easyTimer(time, func) {
   this.time = time;
   this.func = func;
   this.lastTime = 0;
+  this.switch = false;
 }
 
 easyTimer.prototype.checkAndFire = function(time) {
-  if (time - this.lastTime > this.time) {
+  if (this.switch && time - this.lastTime > this.time) {
     this.func(this);
     this.lastTime = time;
   }
@@ -381,6 +383,7 @@ BOMBS = []
 bombimg = new Image();
 bombimg.src = "image/bomb.png";
 bombTimer = new easyTimer(150, drawBomb);
+bombTimer.switch = true; // always true for the bomb
 bombTimer.currentFrame = 0;
 
 function drawBomb(mySelf) {
@@ -437,6 +440,10 @@ beatimg.src = "image/beat_button.png";
 // Prepare Song buttons
 songimg = new Image();
 songimg.src = "image/song_buttons.png";
+
+// Prepare End Mark
+endimg = new Image();
+endimg.src = "image/end_mark.png";
 
 // Prepare the repeat marks
 repeatimg = new Image();
@@ -567,6 +574,14 @@ function drawCurChar(image) {
   L1C.fillRect(x, y + CHARSIZE - MAGNIFY, CHARSIZE, MAGNIFY);
 }
 
+// Right-Top (19,8)
+// 19 - 4 + 1 = 16
+// icon size (14, 13)
+function drawEndMarkIcon(img) {
+  L1C.clearRect(4 * MAGNIFY, 8 * MAGNIFY, 16 * MAGNIFY, 14 * MAGNIFY);
+  L1C.drawImage(img, 5 * MAGNIFY, 8 * MAGNIFY);
+}
+
 function toGrid(realX, realY) {
   var gridLeft   = (8   + 4) * MAGNIFY;
   var gridTop    = (41     ) * MAGNIFY;
@@ -595,35 +610,63 @@ SCREEN.width  = 256 * MAGNIFY;
 SCREEN.height = 152 * MAGNIFY;
 L2C = SCREEN.getContext('2d');
 L2C.imageSmoothingEnabled = false;
-L2C.lastMouseX = 0;
-L2C.lastMouseY = 0;
+// Delete
+// Google don't support MouseEvent.buttons even it is in W3C standard?
+// Low priority? No milestone?
+// I'm outta here. #IAmGoogle
+// https://code.google.com/p/chromium/issues/detail?id=276941
+SCREEN.addEventListener("contextmenu", mouseClickListener);
+
 // ClipRect (8, 41) to (247, 148)
-SCREEN.addEventListener("click", function(e) {
+SCREEN.addEventListener("click", mouseClickListener);
+
+function mouseClickListener(e) {
   if (GameStatus != 0) return;
+  e.preventDefault();
 
   var realX = e.clientX - OFFSETLEFT;
   var realY = e.clientY - OFFSETTOP;
 
   var g = toGrid(realX, realY);
-  if (g === false) return;
+  if (g == false) return;
   var gridX = g[0];
   var gridY = g[1];
 
   // Map logical x to real bar number
   var b = CurPos + gridX - 2;
 
+  // process End Mark
+  if (CurChar == 15) {
+    CurScore.end = b;
+    return;
+  }
+
   if (b >= CurScore.end) return;
+
+  var notes = CurScore['notes'][b];
+  // Delete
+  if (e.button == 2) {
+    // Delete Top of the stack
+    for (var i = notes.length - 1; i >= 0; i--) {
+      if ((notes[i] & 0x3F) == gridY) {
+        notes.splice(i, 1);
+        CurScore.notes[b] = notes;
+        SOUNDS[17].play(8);
+        break;
+      }
+    }
+    return;
+  }
 
   // Handle semitone
   if (e.shiftKey) gridY |= 0x80;
   if (e.ctrlKey ) gridY |= 0x40;
   var note = (CurChar << 8) | gridY;
-  var notes = CurScore['notes'][b];
   SOUNDS[CurChar].play(gridY);
   if (notes.indexOf(note) != -1) return;
   notes.push(note);
   CurScore['notes'][b] = notes;
-});
+}
 
 SCREEN.addEventListener("mousemove", function(e) {
   MouseX = e.clientX;
@@ -645,7 +688,7 @@ SCREEN.addEventListener("dragover", function(e) {
 SCREEN.addEventListener("drop", function(e) {
   e.preventDefault();
   fullInitScore();
-  // function to read given file objets.
+  // function to read a given file
   // Input is a instance of a File object.
   // Returns a instance of a Promise.
   function readFile(file) {
@@ -695,12 +738,12 @@ SCREEN.addEventListener("drop", function(e) {
     CurScore.end  += parseInt(values.END) - 1;
     CurScore.tempo = values.TEMPO;
     document.getElementById('tempo').value = values.TEMPO;
-    CurScore.beats = (values.TIME44 == "TRUE") ? 4 : 3;
+    var beats = (values.TIME44 == "TRUE") ? 4 : 3;
+    CurScore.beats = beats;
     var lf = (values.LOOP == "TRUE") ? true : false;
-    if (CurScore.loop != lf) {
-      document.getElementById("loop").dispatchEvent(
-          new Event("click"));
-    }
+    // click listener will set CurScore.loop
+    b = document.getElementById("loop");
+    lf ? b.set() : b.reset();
   };
   // FileList to Array for Mapping
   var files = [].slice.call(e.dataTransfer.files);
@@ -724,6 +767,11 @@ SCREEN.addEventListener("drop", function(e) {
     }).catch(function(err) {
       alert("Loading MSQ failed: " + err.message);
     }).then(function() {
+      var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
+      var e = new Event("click");
+      e.soundOff = true;
+      b.dispatchEvent(e);
+
       var r = document.getElementById('scroll');
       CurMaxBars = CurScore.end + 1;
       r.max = CurMaxBars - 6;
@@ -739,6 +787,7 @@ SCREEN.addEventListener("drop", function(e) {
 function doAnimation(time) {
   // Bomb
   bombTimer.checkAndFire(time);
+  endMarkTimer.checkAndFire(time);
 
   drawScore(CurPos, CurScore['notes'], 0);
 
@@ -782,6 +831,29 @@ function onload() {
     });
     CONSOLE.appendChild(b);
   }
+
+  // Prepare End Mark button (Char. No. 15)
+  var b = makeButton(235, 8, 13, 14);
+  b.images = sliceImage(endimg, 14, 13); // Note: Different size from the button
+  endMarkTimer = new easyTimer(150, function (self) {
+    // If current is not end mark, just return;
+    if (CurChar != 15) {
+      self.switch = false;
+      return;
+    }
+    self.currentFrame = (self.currentFrame == 0) ? 1 : 0;
+    SCREEN.style.cursor = 'url(' + self.images[self.currentFrame].src + ')' +
+      7 * MAGNIFY +' '+ 7 * MAGNIFY + ', auto';
+  });
+  endMarkTimer.images = b.images;
+  endMarkTimer.currentFrame = 0;
+  b.addEventListener("click", function() {
+    endMarkTimer.switch = true;
+    CurChar = 15;
+    SOUNDS[15].play(8);
+    drawEndMarkIcon(this.images[0]);
+  });
+  CONSOLE.appendChild(b);
 
   // For inserting pseudo elements' styles
   var s = document.createElement("style");
@@ -832,6 +904,10 @@ function onload() {
     CurScore.loop = false;
     this.style.backgroundImage = "url(" + this.images[0].src + ")";
   };
+  b.set   = function () {
+    CurScore.loop = true;
+    this.style.backgroundImage = "url(" + this.images[1].src + ")";
+  }
   s.sheet.insertRule('#loop:focus {outline: none !important;}', 0);
   CONSOLE.appendChild(b);
 
@@ -881,24 +957,76 @@ function onload() {
   NUMBERS = sliceImage(numimg, 5, 7);
   delete numimg;
 
-  // Prepare current empty score
-  initScore();
+  // Prepare Beat buttons w=14, h=15 (81, 203) (96, 203)
+  // (1) Disable self, Enable the other
+  // (2) Change both images
+  // (3) Play Sound
+  // (4) Set CurScore.beat
+  function makeExclusiveFunction(doms, num, success) {
+    var clone = doms.slice(0); // Clone the Array
+    var self = clone[num];
+    clone.splice(num, 1); // Remove No.i element
+    var theOthers = clone;
 
-  // Initializing Screen
-  CurPos = 0;
-  CurChar = 0;
-  drawCurChar(SOUNDS[CurChar].image);
-  changeCursor(CurChar);
-  drawScore(CurPos, CurScore['notes'], 0);
+    return function(e) {
+      // Sound Off for file loading
+      if (!e.soundOff) SOUNDS[17].play(8);
+      self.disabled = true;
+      self.style.backgroundImage = "url(" + self.images[1].src + ")";
+      theOthers.map(function (x) {
+        x.disabled = false;
+        x.style.backgroundImage = "url(" + x.images[0].src + ")";
+      });
+      success(self);
+    };
+  }
 
-  // Make bomb images from the bomb sheet
-  BOMBS = sliceImage(bombimg, 14, 18);
-  delete bombimg;
+  var imgs = sliceImage(beatimg, 14, 15);
+  var b1 = makeButton(81, 203, 14, 15);
+  b1.id = '3beats';
+  b1.beats = 3;
+  b1.images = [imgs[0], imgs[1]];
+  b1.style.backgroundImage = "url(" + b1.images[0].src + ")";
+  b1.disabled = false;
+  CONSOLE.appendChild(b1);
+  var b2 = makeButton(96, 203, 14, 15);
+  b2.id = '4beats';
+  b2.beats = 4;
+  b2.images = [imgs[2], imgs[3]];
+  b2.style.backgroundImage = "url(" + b2.images[1].src + ")";
+  b2.disabled = true;
+  CONSOLE.appendChild(b2);
+  var func = function(self) {CurScore.beats = self.beats};
+  b1.addEventListener("click", makeExclusiveFunction([b1, b2], 0, func));
+  b2.addEventListener("click", makeExclusiveFunction([b1, b2], 1, func));
 
-  // Make Mario images
-  Mario = new MarioClass();
-  Mario.images = sliceImage(marioimg, 16, 22);
-  delete marioimg;
+  // Preapre Song Buttons (136, 202) 15x17, 160 - 136 = 24
+  var imgs = sliceImage(songimg, 15, 17);
+  var b = ['frog','beak','1up'].map(function (id, idx) {
+    var b = makeButton(136 + 24 * idx, 202, 15, 17);
+    b.id = id;
+    b.num = idx;
+    b.images = imgs.slice(idx * 3, idx * 3 + 2);
+    b.style.backgroundImage = "url(" + b.images[0].src + ")";
+    b.disabled = false;
+    CONSOLE.appendChild(b);
+    return b;
+  });
+  var func = function (self) {
+    if (CurScore.loop !=  EmbeddedSong[self.num].loop) {
+      document.getElementById("loop").dispatchEvent(
+          new Event("click"));
+    }
+    CurScore = clone(EmbeddedSong[self.num]);
+    document.getElementById("tempo").value = CurScore.tempo;
+    var s = document.getElementById("scroll");
+    s.max = CurScore.end - 5;
+    s.value = 0;
+    CurPos = 0;
+  };
+  b[0].addEventListener("click", makeExclusiveFunction(b, 0, func));
+  b[1].addEventListener("click", makeExclusiveFunction(b, 1, func));
+  b[2].addEventListener("click", makeExclusiveFunction(b, 2, func));
 
   // Prepare tempo range
   // (116, 172) width 40px, height 8px
@@ -971,71 +1099,24 @@ function onload() {
   CONSOLE.appendChild(b);
   s.sheet.insertRule('#clear:focus {outline: none !important;}', 0);
 
-  // Prepare Beat buttons w=14, h=15 (81, 203) (96, 203)
-  // (1) Disable self, Enable the other
-  // (2) Change both images
-  // (3) Play Sound
-  // (4) Set CurScore.beat
-  function makeExclusiveFunction(doms, num, success) {
-    var clone = doms.slice(0); // Clone the Array
-    var self = clone[num];
-    clone.splice(num, 1); // Remove No.i element
-    var theOthers = clone;
+  // Prepare current empty score
+  initScore();
 
-    return function(e) {
-      SOUNDS[17].play(8);
-      self.disabled = true;
-      self.style.backgroundImage = "url(" + self.images[1].src + ")";
-      theOthers.map(function (x) {
-        x.disabled = false;
-        x.style.backgroundImage = "url(" + x.images[0].src + ")";
-      });
-      success(self);
-    };
-  }
+  // Initializing Screen
+  CurPos = 0;
+  CurChar = 0;
+  drawCurChar(SOUNDS[CurChar].image);
+  changeCursor(CurChar);
+  drawScore(CurPos, CurScore['notes'], 0);
 
-  var imgs = sliceImage(beatimg, 14, 15);
-  var b1 = makeButton(81, 203, 14, 15);
-  b1.id = '3beat';
-  b1.beats = 3;
-  b1.images = [imgs[0], imgs[1]];
-  b1.style.backgroundImage = "url(" + b1.images[0].src + ")";
-  b1.disabled = false;
-  CONSOLE.appendChild(b1);
-  var b2 = makeButton(96, 203, 14, 15);
-  b2.id = '4beat';
-  b2.beats = 4;
-  b2.images = [imgs[2], imgs[3]];
-  b2.style.backgroundImage = "url(" + b2.images[1].src + ")";
-  b2.disabled = true;
-  CONSOLE.appendChild(b2);
-  var func = function(self) {CurScore.beats = self.beats};
-  b1.addEventListener("click", makeExclusiveFunction([b1, b2], 0, func));
-  b2.addEventListener("click", makeExclusiveFunction([b1, b2], 1, func));
+  // Make bomb images from the bomb sheet
+  BOMBS = sliceImage(bombimg, 14, 18);
+  delete bombimg;
 
-  // Preapre Song Buttons (136, 202) 15x17, 160 - 136 = 24
-  var imgs = sliceImage(songimg, 15, 17);
-  var b = ['frog','beak','1up'].map(function (id, idx) {
-    var b = makeButton(136 + 24 * idx, 202, 15, 17);
-    b.id = id;
-    b.num = idx;
-    b.images = imgs.slice(idx * 3, idx * 3 + 2);
-    b.style.backgroundImage = "url(" + b.images[0].src + ")";
-    b.disabled = false;
-    CONSOLE.appendChild(b);
-    return b;
-  });
-  var func = function (self) {
-    if (CurScore.loop !=  EmbeddedSong[self.num].loop) {
-      document.getElementById("loop").dispatchEvent(
-          new Event("click"));
-    }
-    CurScore = clone(EmbeddedSong[self.num]);
-    document.getElementById("tempo").value = CurScore.tempo;
-  };
-  b[0].addEventListener("click", makeExclusiveFunction(b, 0, func));
-  b[1].addEventListener("click", makeExclusiveFunction(b, 1, func));
-  b[2].addEventListener("click", makeExclusiveFunction(b, 2, func));
+  // Make Mario images
+  Mario = new MarioClass();
+  Mario.images = sliceImage(marioimg, 16, 22);
+  delete marioimg;
 
   // Start Animation
   requestAnimFrame(doAnimation);
@@ -1061,7 +1142,6 @@ function clearListener(e) {
     return makePromise(0);
   }).then(function () {
     initScore();
-    drawScore(0, CurScore.notes, 0);
     CurPos = 0;
   });
 }
@@ -1163,9 +1243,10 @@ function fullInitScore() {
   CurScore.notes = [];
   CurMaxBars = 0;
   CurScore.beats = 4;
-  CurScore.loop = false;
+  // Loop button itself has a state, so keep current value;
+  // CurScore.loop = false;
   CurScore.end = 0;
-  CurScore.tempo = 100;
+  CurScore.tempo = DEFAULTTEMPO;
 }
 
 // Initialize Score
@@ -1177,11 +1258,11 @@ function initScore() {
   var s = document.getElementById("scroll");
   s.max = DEFAULTMAXBARS - 6;
   s.value = 0;
-  CurScore.beats = 4;
   CurScore.loop = false;
   document.getElementById("loop").reset();
   CurScore.end = DEFAULTMAXBARS - 1;
-  CurScore.tempo = 90;
+  CurScore.tempo = DEFAULTTEMPO;
+  document.getElementById("tempo").value = DEFAULTTEMPO;
   //CurScore = clone(EmbeddedSong[1]);
 }
 
