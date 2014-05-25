@@ -18,6 +18,7 @@ OFFSETLEFT = CONSOLE.offsetLeft;
 OFFSETTOP  = CONSOLE.offsetTop;
 CurChar = 0;
 CurPos = 0;
+CurSong = undefined; // For Embedded Songs
 CurScore = {};
 DEFAULTMAXBARS = 24 * 4 + 1; // 24 bars by default
 DEFAULTTEMPO = 100;
@@ -59,7 +60,10 @@ function SoundEntity(path) {
 // You should choose correct playback rate to play a music.
 SoundEntity.prototype.play = function(scale, delay) {
   var source = AC.createBufferSource();
-  var semitone = this.diff[scale];
+  var tmps = scale & 0x0F;
+  var semitone = this.diff[tmps];
+  if ((scale & 0x80) != 0) semitone++;
+  else if ((scale & 0x40) != 0) semitone--;
   if (delay == undefined) delay = 0;
   source.buffer = this.buffer;
   source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
@@ -87,7 +91,10 @@ SoundEntity.prototype.playChord = function(noteList, delay) {
   // I heard that Array#map is slower than for loop because of costs of calling methods.
   for (var i = 0; i < noteList.length; i++) {
     var source = AC.createBufferSource();
-    var semitone = this.diff[noteList[i]];
+    var scale = (noteList[i] & 0x0F);
+    var semitone = this.diff[scale];
+    if ((noteList[i] & 0x80) != 0) semitone++;
+    else if ((noteList[i] & 0x40) != 0) semitone--;
     source.buffer = this.buffer;
     source.playbackRate.value = Math.pow(SEMITONERATIO, semitone);
 
@@ -149,6 +156,10 @@ MarioClass.prototype.init = function() {
   this.state = 0;
   this.scroll = 0;
   this.offset = -16;
+  this.timer = new easyTimer(100, function(timer) {
+    Mario.state = (Mario.state == 1) ? 0 : 1;
+  });
+  this.timer.switch = true; // forever true;
   this.isJumping = false;
 };
 
@@ -174,20 +185,23 @@ MarioClass.prototype.init4leaving = function() {
 
 /*
  * You can assume that animation is always 60FPS (in theory :-)
- * So 1[frame] is 1 / 60 = 0.1666...[ms]
+ * So 1[frame] is 1 / 60 = 0.1666...[sec]
  * Mario runs 32[dots] per 1[beat]
- * [beat/sec] = TEMPO[bpm] / 60[sec]
- * [sec/beat] = 60[sec] / TEMPO[bpm]
- * So Mario runs 1[dot] in 60 / TEMPO / 32 [sec]
- * If [sec/1beat] / 32 < [sec/1frame] then Mario warps. (NOT successive)
- * In that case, you have to predicate the postion.
- * (And even the samples, it can't draw every single increments...)
- *
- * MAX BPM is when t[sec/1beat] = 2/60, then TEMPO = 1800
- * Acctually, you can set TEMPO<3600, but it sounds just like noise over 2000
+ * [beat/1sec] = TEMPO[bpm] / 60[sec]
+ * [sec/1beat] = 60[sec] / TEMPO[bpm] for 32[dots]
+ * 1/60 : 60/TEMPO = x : 32
+ * 60x/TEMPO = 32/60
+ * x = 32 * TEMPO / 60 * 60 [dots/1frame]
+ * Acctually, [msec/1frame] = diff is not always 1/60 * 1000; So,
+ * diff : 60 * 1000 / TEMPO = x : 32
+ * 60000x/TEMPO = 32diff
+ * x = 32 * diff * TEMPO / 60000
+ * Logical MAX BPM is when t[sec/1beat] = 2/60, then TEMPO = 1800
+ * Because Mario must jump up and down, so he needs 2 times to draw in 1 beat.
  * Real Mario sequencer tempo limit seems 700.
  * So this is good enough.
  * (Famous fastest song, Hatsune Miku no Shoshitsu is 245 (* 4 < 1000))
+ * (Mario Sequencer handles only 3 or 4 beat, so if you want to do 8 beat, TEMPO*2)
  *
  * At first, Mario runs to the center of the stage.
  * Then Mario will be fixed at the position.
@@ -198,13 +212,11 @@ MarioClass.prototype.init4leaving = function() {
  *
  */
 MarioClass.prototype.init4playing = function(timeStamp) {
-  this.start = timeStamp;
+  this.lastTime = timeStamp;
   this.offset = this.x;
   this.scroll = 0;
-  this.pos = 1; // logical bar position at first untill scroll starts
+  this.pos = 1;
   this.state == 1;
-  this.spb = 60  * 1000 / CurScore.tempo; // [ms/beat]
-  this.nextNoteOn = timeStamp + this.spb;
   this.checkMarioShouldJump();
 };
 
@@ -231,23 +243,25 @@ MarioClass.prototype.play = function(timeStamp) {
     }
   }
 
-  var diff = timeStamp - this.start; // both timestamp and start are [ms]
-  var left = this.nextNoteOn - timeStamp;
+  var tempo = CurScore.tempo
+  var diff = timeStamp - this.lastTime; // both are [ms]
+  if (diff > 32) diff = 16; // When user hide the tag, force it
+  this.lastTime = timeStamp;
+  var step = 32 * diff * tempo / 60000; // (60[sec] * 1000)[msec]
 
-  this.state = (Math.floor(diff / 100) % 2 == 0) ? 1 : 0;
+  this.timer.checkAndFire(timeStamp);
   var scroll = document.getElementById('scroll');
 
+  var nextBar = (16 + 32 * (this.pos - CurPos + 1) - 8);
   if (Mario.x < 120) { // Mario still has to run
-    // If logical left time to next note is smaller than t [sec/1frame]
-    if (left <= 1000 / 59) { // t can be longer than 1000/60 but seems like not 1000/59
+    this.x += step; 
+    // If this step crosses the bar
+    if (this.x >= nextBar) {
       this.pos++;
-      this.x = (16 + 32 * this.pos - 8);
-      this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
-      scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+      scheduleAndPlay(CurScore.notes[this.pos - 2], 0); // Ignore diff
       this.checkMarioShouldJump();
     } else {
       // 32 dots in t[sec/1beat]
-      this.x = diff * (32 * CurScore.tempo / 60000) + this.offset;
       if (this.x >= 120) {
         this.scroll = this.x - 120;
         this.x = 120;
@@ -255,31 +269,30 @@ MarioClass.prototype.play = function(timeStamp) {
     }
   } else if (CurPos <= CurScore.end - 6) { // Scroll 
     this.x = 120;
-    if (left <= 1000/59) {
+    if (this.scroll < 16 && (this.scroll + step) > 16) {
       this.pos++;
-      this.scroll = 16;
-      this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
-      //  Schedule Play!
-      scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+      this.scroll += step;
+      scheduleAndPlay(CurScore.notes[this.pos - 2], 0); // Ignore error
       this.checkMarioShouldJump();
     } else {
-      var s = diff * (32 * CurScore.tempo / 60000) - (120 - 40);
-      this.scroll = Math.round(s % 32);
-      CurPos = Math.floor(s / 32);
-      scroll.value = CurPos;
+      this.scroll += step;
+      if (this.scroll > 32) {
+        this.scroll -= 32;
+        CurPos++;
+        scroll.value = CurPos;
+        if (CurPos > (CurScore.end - 6)) {
+          this.x += this.scroll;
+          this.scroll = 0
+        }
+      }
     }
   } else {
-    this.scroll = 0;
-    // If logical left time to next note is smaller than t [sec/1frame]
-    if (left <= 1000 / 59) { // t can be longer than 1000/60 but seems like not 1000/59
+    this.x += step;
+    // If this step crosses the bar
+    if (this.x >= nextBar) {
       this.pos++;
-      this.x = (16 + 32 * (this.pos - CurPos) - 8);
-      this.nextNoteOn = this.start + this.pos * 60 * 1000 / CurScore.tempo;
-      scheduleAndPlay(CurScore.notes[this.pos - 2], left);
+      scheduleAndPlay(CurScore.notes[this.pos - 2], 0); // Ignore diff
       this.checkMarioShouldJump();
-    } else {
-      // 32 dots in t[sec/1beat]
-      this.x = diff * (32 * CurScore.tempo / 60000) - (CurPos + 1) * 32 + 72;
     }
   }
   drawScore(CurPos, CurScore.notes, this.scroll);
@@ -295,10 +308,12 @@ MarioClass.prototype.jump = function(x) {
 
 MarioClass.prototype.draw = function() {
   var y = (41 - 22);
+  var state = this.state
   if (this.isJumping) {
-    this.state = 2;
+    state = 2;
     if (this.x == 120) { // In scroll mode
-      if (this.scroll != 16) { // scroll == 16 is just on the bar, 0 and 32 is on the center of between bars
+      // (scroll == 16) is just on the bar, 0 and 32 is on the center of between bars
+      if (this.scroll != 16) {
         y -= this.jump(this.scroll > 16 ? this.scroll - 16 : this.scroll + 16);
       } /* if scroll == 16 then Mario should be on the ground */
     } else { // Running to the center, or leaving to the goal
@@ -306,8 +321,7 @@ MarioClass.prototype.draw = function() {
     }
   }
    
-  L2C.drawImage(this.images[this.state],
-    this.x * MAGNIFY, y * MAGNIFY);
+  L2C.drawImage(this.images[state], this.x * MAGNIFY, y * MAGNIFY);
 };
 
 MarioClass.prototype.leave = function(timeStamp) {
@@ -445,6 +459,10 @@ songimg.src = "image/song_buttons.png";
 endimg = new Image();
 endimg.src = "image/end_mark.png";
 
+// Prepare Semitone
+semitoneimg = new Image();
+semitoneimg.src = "image/semitone.png";
+
 // Prepare the repeat marks
 repeatimg = new Image();
 repeatimg.src = "image/repeat_head.png";
@@ -528,6 +546,13 @@ function drawScore(pos, notes, scroll) {
       }
       L2C.drawImage(SOUNDS[sndnum].image, x - 8 * MAGNIFY,
         (40 + scale * 8) * MAGNIFY);
+      if ((b[j] & 0x80) != 0) {
+        L2C.drawImage(Semitones[0], x - 13 * MAGNIFY,
+        (44 + scale * 8) * MAGNIFY);
+      } else if ((b[j] & 0x40) != 0) {
+        L2C.drawImage(Semitones[1], x - 13 * MAGNIFY,
+        (44 + scale * 8) * MAGNIFY);
+      }
     }
   }
   L2C.restore();
@@ -658,12 +683,17 @@ function mouseClickListener(e) {
     return;
   }
 
+  var note = (CurChar << 8) | gridY;
+  if (notes.indexOf(note) != -1) return;
+  //
   // Handle semitone
   if (e.shiftKey) gridY |= 0x80;
+  console.log("e.shiftKey = " + e.shiftKey);
+  console.log("gridY = " + gridY);
   if (e.ctrlKey ) gridY |= 0x40;
-  var note = (CurChar << 8) | gridY;
+  console.log("e.ctrlKey = " + e.ctrlKey);
   SOUNDS[CurChar].play(gridY);
-  if (notes.indexOf(note) != -1) return;
+  note = (CurChar << 8) | gridY;
   notes.push(note);
   CurScore['notes'][b] = notes;
 }
@@ -1013,16 +1043,15 @@ function onload() {
     return b;
   });
   var func = function (self) {
-    if (CurScore.loop !=  EmbeddedSong[self.num].loop) {
-      document.getElementById("loop").dispatchEvent(
-          new Event("click"));
-    }
     CurScore = clone(EmbeddedSong[self.num]);
     document.getElementById("tempo").value = CurScore.tempo;
+    var b = document.getElementById("loop");
+    if (CurScore.loop) b.set(); else b.reset();
     var s = document.getElementById("scroll");
     s.max = CurScore.end - 5;
     s.value = 0;
     CurPos = 0;
+    CurSong = self;
   };
   b[0].addEventListener("click", makeExclusiveFunction(b, 0, func));
   b[1].addEventListener("click", makeExclusiveFunction(b, 1, func));
@@ -1118,6 +1147,9 @@ function onload() {
   Mario.images = sliceImage(marioimg, 16, 22);
   delete marioimg;
 
+  // Make Semitone images
+  Semitones = sliceImage(semitoneimg, 5, 12);
+
   // Start Animation
   requestAnimFrame(doAnimation);
 }
@@ -1144,6 +1176,8 @@ function clearListener(e) {
     initScore();
     CurPos = 0;
   });
+
+  clearSongButtons();
 }
 
 // Play Button Listener
@@ -1220,7 +1254,7 @@ function doMarioPlay(timeStamp) {
 // Let Mario leave from the stage
 function doMarioLeave(timeStamp) {
   bombTimer.checkAndFire(timeStamp);
-  drawScore(CurPos, CurScore.notes, Mario.scroll); // ToDo: Decide offset!
+  drawScore(CurPos, CurScore.notes, Mario.scroll);
   Mario.leave(timeStamp);
 
   if (Mario.x < 247) {
@@ -1235,6 +1269,16 @@ function doMarioLeave(timeStamp) {
 
     requestAnimFrame(doAnimation);
   }
+}
+
+// Clear Song Buttons
+function clearSongButtons() {
+  ['frog','beak','1up'].map(function (id, idx) {
+    var b = document.getElementById(id);
+    b.disabled = false;
+    b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  });
+  CurSong = undefined;
 }
 
 // Full Initialize Score
