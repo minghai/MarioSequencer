@@ -775,6 +775,18 @@ SCREEN.addEventListener("drop", function(e) {
     b = document.getElementById("loop");
     lf ? b.set() : b.reset();
   };
+  function addJSON(fileReader) {
+    var json = JSON.parse(fileReader.result);
+    for (var i = 0; i < json.notes.length; i++)
+      CurScore.notes.push(json.notes[i]);
+    CurScore.end += json.end - 1;
+    CurScore.tempo = json.tempo;
+    document.getElementById('tempo').value = json.tempo;
+    CurScore.beats = json.beats;
+    CurScore.loop = json.loop;
+    b = document.getElementById('loop');
+    CurScore.loop ? b.set() : b.reset();
+  }
   // FileList to Array for Mapping
   var files = [].slice.call(e.dataTransfer.files);
   // Support Mr.Phenix's files. He numbered files with decimal numbers :-)
@@ -793,7 +805,12 @@ SCREEN.addEventListener("drop", function(e) {
     return chain.then(function() {
       return fp;
     }).then(function(fileReader) {
-      addMSQ(fileReader);
+      var ext = fileReader.name.slice(-3);
+      if (ext == "msq") {
+        addMSQ(fileReader);
+      } else {
+        addJSON(fileReader);
+      }
     }).catch(function(err) {
       alert("Loading MSQ failed: " + err.message);
     }).then(function() {
@@ -1342,6 +1359,18 @@ function sliceImage(img, width, height) {
     result[i] = charimg;
   }
   return result;
+}
+
+// Download Score as JSON
+//   http://jsfiddle.net/koldev/cW7W5/
+function download() {
+  var link = document.createElement("a");
+  link.download = 'MSQ_Data.json';
+  var json = JSON.stringify(CurScore);
+  var blob = new Blob([json], {type: "octet/stream"});
+  var url = window.URL.createObjectURL(blob);
+  link.href = url;
+  link.click();
 }
 
 EmbeddedSong = [];
