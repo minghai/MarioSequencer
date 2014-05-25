@@ -233,6 +233,16 @@ MarioClass.prototype.play = function(timeStamp) {
     var dic = {};
     for (var i = 0; i < notes.length; i++) {
       var note = notes[i];
+
+      // Dynamic tempo change
+      if (typeof note == "string") {
+        console.log(note);
+        var tempo = note.split("=")[1];
+        CurScore.tempo = tempo;
+        document.getElementById("tempo").value = tempo;
+        continue;
+      }
+
       var num = note >> 8;
       var scale = note & 0xFF;
       if  (!dic[num]) dic[num] = [scale];
@@ -414,6 +424,9 @@ function drawBomb(mySelf) {
     case 2:
       break;
   }
+  if (CurSong == undefined || GameStatus != 2) return;
+  CurSong.style.backgroundImage =
+    "url(" + CurSong.images[mySelf.currentFrame + 1].src + ")";
 }
 
 // Prepare the G-Clef. (x, y) = (9, 48)
@@ -538,6 +551,8 @@ function drawScore(pos, notes, scroll) {
     if (b == undefined) continue;
     var hflag = false;
     for (var j = 0; j < b.length; j++) {
+      if (typeof b[j] == "string") continue; // for dynamic TEMPO
+
       var sndnum = b[j] >> 8;
       var scale  = b[j] & 0x0F;
       if (!hflag && (scale >= 11)) {
@@ -688,10 +703,7 @@ function mouseClickListener(e) {
   //
   // Handle semitone
   if (e.shiftKey) gridY |= 0x80;
-  console.log("e.shiftKey = " + e.shiftKey);
-  console.log("gridY = " + gridY);
   if (e.ctrlKey ) gridY |= 0x40;
-  console.log("e.ctrlKey = " + e.ctrlKey);
   SOUNDS[CurChar].play(gridY);
   note = (CurChar << 8) | gridY;
   notes.push(note);
@@ -717,6 +729,7 @@ SCREEN.addEventListener("dragover", function(e) {
 // http://www.html5rocks.com/en/tutorials/es6/promises/
 SCREEN.addEventListener("drop", function(e) {
   e.preventDefault();
+  clearSongButtons();
   fullInitScore();
   // function to read a given file
   // Input is a instance of a File object.
@@ -746,6 +759,7 @@ SCREEN.addEventListener("drop", function(e) {
       this[k] = v;
     }, values);
     
+    var oldEnd = CurScore.end;
     var s = values.SCORE;
     var i = 0, count = CurScore.end;
     // MSQ format is variable length string.
@@ -766,8 +780,9 @@ SCREEN.addEventListener("drop", function(e) {
     }
 
     CurScore.end  += parseInt(values.END) - 1;
+    if (CurScore.tempo != values.TEMPO)
+      CurScore.notes[oldEnd].splice(0, 0, "TEMPO=" + values.TEMPO);
     CurScore.tempo = values.TEMPO;
-    document.getElementById('tempo').value = values.TEMPO;
     var beats = (values.TIME44 == "TRUE") ? 4 : 3;
     CurScore.beats = beats;
     var lf = (values.LOOP == "TRUE") ? true : false;
@@ -777,15 +792,22 @@ SCREEN.addEventListener("drop", function(e) {
   };
   function addJSON(fileReader) {
     var json = JSON.parse(fileReader.result);
-    for (var i = 0; i < json.notes.length; i++)
+    for (var i = 0; i < json.end; i++)
       CurScore.notes.push(json.notes[i]);
-    CurScore.end += json.end - 1;
+
+    var notes = CurScore.notes[CurScore.end];
+    if (CurScore.tempo != json.tempo && notes.length != 0) {
+      var tempostr = notes[0];
+      if (typeof tempostr != "string") {
+        notes.splice(0, 0, "TEMPO=" + json.tempo);
+      }
+    }
     CurScore.tempo = json.tempo;
-    document.getElementById('tempo').value = json.tempo;
-    CurScore.beats = json.beats;
-    CurScore.loop = json.loop;
-    b = document.getElementById('loop');
-    CurScore.loop ? b.set() : b.reset();
+
+    CurScore.end += json.end;
+
+    b = document.getElementById("loop");
+    if (CurScore.loop) b.set; else b.reset();
   }
   // FileList to Array for Mapping
   var files = [].slice.call(e.dataTransfer.files);
@@ -796,15 +818,18 @@ SCREEN.addEventListener("drop", function(e) {
     var n1 = a.name;
     var n2 = b.name;
     function strip(name) {
-      n = /\d+\.\d+|\d+/.exec(name)[0];
+      n = /\d+\.\d+|\d+/.exec(name);
+      if (n == null) return 0;
+      n = n[0];
       return parseFloat(n);
     }
     return strip(n1) - strip(n2);
   });
-  files.map(readFile).reduce(function(chain, fp) {
+  var last = files.map(readFile).reduce(function(chain, fp, idx) {
     return chain.then(function() {
       return fp;
     }).then(function(fileReader) {
+      fileReader.idx = idx;
       var ext = fileReader.name.slice(-3);
       if (ext == "msq") {
         addMSQ(fileReader);
@@ -813,19 +838,29 @@ SCREEN.addEventListener("drop", function(e) {
       }
     }).catch(function(err) {
       alert("Loading MSQ failed: " + err.message);
-    }).then(function() {
-      var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
-      var e = new Event("click");
-      e.soundOff = true;
-      b.dispatchEvent(e);
-
-      var r = document.getElementById('scroll');
-      CurMaxBars = CurScore.end + 1;
-      r.max = CurMaxBars - 6;
-      r.value = 0;
-      CurPos = 0;
     });
   }, Promise.resolve());
+
+  // Finally, after reducing, set parameters to Score
+  last.then(function () {
+    var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
+    var e = new Event("click");
+    e.soundOff = true;
+    b.dispatchEvent(e);
+
+    var r = document.getElementById('scroll');
+    CurMaxBars = CurScore.end + 1;
+    r.max = CurMaxBars - 6;
+    r.value = 0;
+    CurPos = 0;
+
+    var tempo = CurScore.notes[0][0];
+    if (tempo.substr(0, 5) == "TEMPO") {
+      tempo = tempo.split("=")[1];
+      CurScore.tempo = tempo;
+      document.getElementById("tempo").value = tempo;
+    }
+  });
 
   return false;
 });
@@ -1053,7 +1088,7 @@ function onload() {
     var b = makeButton(136 + 24 * idx, 202, 15, 17);
     b.id = id;
     b.num = idx;
-    b.images = imgs.slice(idx * 3, idx * 3 + 2);
+    b.images = imgs.slice(idx * 3, idx * 3 + 3);
     b.style.backgroundImage = "url(" + b.images[0].src + ")";
     b.disabled = false;
     CONSOLE.appendChild(b);
@@ -1206,10 +1241,8 @@ function playListener(e) {
   b.disabled = false;
   this.disabled = true; // Would be unlocked by stop button
 
-  document.getElementById("toLeft").disabled  = true;
-  document.getElementById("toRight").disabled = true;
-  document.getElementById("scroll").disabled  = true;
-  document.getElementById("clear").disabled   = true;
+  ["toLeft", "toRight", "scroll", "clear", "frog", "beak", "1up"].
+    map(function (id) {document.getElementById(id).disabled = true;});
 
   GameStatus = 1; // Mario Entering the stage
   CurPos = 0;     // doAnimation will draw POS 0 and stop
@@ -1278,11 +1311,11 @@ function doMarioLeave(timeStamp) {
     requestAnimFrame(doMarioLeave);
   } else {
     GameStatus = 0;
-    document.getElementById("toLeft").disabled  = false;
-    document.getElementById("toRight").disabled = false;
-    document.getElementById("scroll").disabled  = false;
-    document.getElementById("play").disabled    = false;
-    document.getElementById('clear').disabled   = false;
+    
+    ["toLeft", "toRight", "scroll", "play", "clear", "frog", "beak", "1up"].
+      map(function (id) {
+        document.getElementById(id).disabled = false;
+      });
 
     requestAnimFrame(doAnimation);
   }
@@ -1307,7 +1340,7 @@ function fullInitScore() {
   // Loop button itself has a state, so keep current value;
   // CurScore.loop = false;
   CurScore.end = 0;
-  CurScore.tempo = DEFAULTTEMPO;
+  CurScore.tempo = 0;
 }
 
 // Initialize Score
