@@ -314,7 +314,7 @@ MarioClass.prototype.play = function(timeStamp) {
 // Mario Jump
 MarioClass.prototype.jump = function(x) {
   var h = [0, 2, 4, 6, 8, 10, 12, 13, 14, 15, 16, 17, 18, 18, 19, 19, 19,
-          19, 19, 18, 18, 17, 16, 15, 14, 13, 12, 10, 8, 6, 4, 2, 0]
+           19, 19, 18, 18, 17, 16, 15, 14, 13, 12, 10, 8, 6, 4, 2, 0];
   return h[Math.round(x) % 32];
 }
 
@@ -531,7 +531,8 @@ function drawScore(pos, notes, scroll) {
   var orange = (beats == 4) ? 3 - ((pos + 1) % 4) : 2 - ((pos + 3) % 3);
   var i = (pos < 2) ? (2 - pos) : 0;
   for (; i < 9; i++) {
-    var x = (16 + 32 * i - scroll) * MAGNIFY;
+    var xorg = 16 + 32 * i - scroll;
+    var x = xorg * MAGNIFY;
     var barnum = pos + i - 2;
 
     if (barnum == CurScore.end) {
@@ -554,6 +555,20 @@ function drawScore(pos, notes, scroll) {
 
     var b = notes[barnum];
     if (b == undefined) continue;
+
+    // Get notes down
+    var delta = 0;
+    if (GameStatus == 2  && Mario.pos - 2 == barnum) {
+      var idx;
+      if (Mario.x == 120) {
+        idx = (Mario.scroll >= 16) ? Mario.scroll - 16 : Mario.scroll + 16;
+      } else {
+        idx = Mario.x + 8 - xorg;
+      }
+      var tbl = [0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 8, 8, 8, 8,
+                 8, 8, 8, 8, 8, 7, 7, 6, 6, 5, 5, 4, 3, 3, 2, 1, 0];
+      delta = tbl[Math.round(idx)];
+    }
     var hflag = false;
     for (var j = 0; j < b.length; j++) {
       if (typeof b[j] == "string") continue; // for dynamic TEMPO
@@ -570,13 +585,14 @@ function drawScore(pos, notes, scroll) {
         drawHorizontalBar(i, scroll);
       }
       L2C.drawImage(SOUNDS[sndnum].image, x - 8 * MAGNIFY,
-        (40 + scale * 8) * MAGNIFY);
+        (40 + scale * 8 + delta) * MAGNIFY);
+
+      var x2 = (x - 13 * MAGNIFY);
+      var y = (44 + scale * 8 + delta) * MAGNIFY;
       if ((b[j] & 0x80) != 0) {
-        L2C.drawImage(Semitones[0], x - 13 * MAGNIFY,
-        (44 + scale * 8) * MAGNIFY);
+        L2C.drawImage(Semitones[0], x2, y);
       } else if ((b[j] & 0x40) != 0) {
-        L2C.drawImage(Semitones[1], x - 13 * MAGNIFY,
-        (44 + scale * 8) * MAGNIFY);
+        L2C.drawImage(Semitones[1], x2, y);
       }
     }
   }
