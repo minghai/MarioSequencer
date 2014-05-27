@@ -127,7 +127,6 @@ function createPromiseToLoad(filepath) {
           if (!buffer) {
             reject('error decoding file data: ' + url);
           }
-          console.log("buffer = " + buffer);
           resolve(buffer);
         },
         function(error) {
@@ -240,7 +239,6 @@ MarioClass.prototype.play = function(timeStamp) {
 
       // Dynamic tempo change
       if (typeof note == "string") {
-        console.log(note);
         var tempo = note.split("=")[1];
         CurScore.tempo = tempo;
         document.getElementById("tempo").value = tempo;
@@ -501,9 +499,13 @@ function drawScore(pos, notes, scroll) {
   var realX = MouseX - OFFSETLEFT;
   var realY = MouseY - OFFSETTOP;
   var g = toGrid(realX, realY);
+  var gridX;
+  var gridY;
   // Edit mode only, no scroll
-  if (GameStatus == 0 && g !== false && g[1] >= 11) {
-      drawHorizontalBar(g[0], 0);
+  if (GameStatus == 0 && g !== false) {
+    gridX = g[0];
+    gridY = g[1];
+    if (gridY >= 11) drawHorizontalBar(gridX, 0);
   }
 
   if (pos == 0) {
@@ -558,6 +560,11 @@ function drawScore(pos, notes, scroll) {
 
       var sndnum = b[j] >> 8;
       var scale  = b[j] & 0x0F;
+      // When CurChar is eraser, and the mouse cursor is on the note,
+      // an Image of note blinks.
+      if (CurChar == 16 && g != false && i == gridX && scale == gridY &&
+          eraserTimer.currentFrame == 1) {continue;}
+
       if (!hflag && (scale >= 11)) {
         hflag = true;
         drawHorizontalBar(i, scroll);
@@ -624,9 +631,14 @@ function drawEndMarkIcon(img) {
   L1C.clearRect(4 * MAGNIFY, 8 * MAGNIFY, 16 * MAGNIFY, 14 * MAGNIFY);
   L1C.drawImage(img, 5 * MAGNIFY, 8 * MAGNIFY);
 }
+// Draw Eraser Icon
+// In fact, this only erases Icon 
+function drawEraserIcon() {
+  L1C.clearRect(4 * MAGNIFY, 8 * MAGNIFY, 16 * MAGNIFY, 14 * MAGNIFY);
+}
 
 function toGrid(realX, realY) {
-  var gridLeft   = (8   + 4) * MAGNIFY;
+  var gridLeft   = (8      ) * MAGNIFY;
   var gridTop    = (41     ) * MAGNIFY;
   var gridRight  = (247 - 4) * MAGNIFY;
   var gridBottom = (148 - 4) * MAGNIFY;
@@ -688,7 +700,7 @@ function mouseClickListener(e) {
 
   var notes = CurScore['notes'][b];
   // Delete
-  if (e.button == 2) {
+  if (CurChar == 16 || e.button == 2) {
     // Delete Top of the stack
     for (var i = notes.length - 1; i >= 0; i--) {
       if ((notes[i] & 0x3F) == gridY) {
@@ -870,6 +882,7 @@ SCREEN.addEventListener("drop", function(e) {
 function doAnimation(time) {
   // Bomb
   bombTimer.checkAndFire(time);
+  eraserTimer.checkAndFire(time);
   endMarkTimer.checkAndFire(time);
 
   drawScore(CurPos, CurScore['notes'], 0);
@@ -909,6 +922,7 @@ function onload() {
     b.addEventListener("click", function() {
       this.se.play(8); // Note F
       CurChar = this.num;
+      clearEraserButton();
       changeCursor(this.num);
       drawCurChar(this.se.image);
     });
@@ -934,6 +948,7 @@ function onload() {
     endMarkTimer.switch = true;
     CurChar = 15;
     SOUNDS[15].play(8);
+    clearEraserButton();
     drawEndMarkIcon(this.images[0]);
   });
   CONSOLE.appendChild(b);
@@ -1110,6 +1125,31 @@ function onload() {
   b[1].addEventListener("click", makeExclusiveFunction(b, 1, func));
   b[2].addEventListener("click", makeExclusiveFunction(b, 2, func));
 
+  // Prepare Eraser (Warning: Depends on the Song button images)
+  b = makeButton(40, 202, 15, 17);
+  b.id = 'eraser';
+  b.images = [imgs[9], imgs[10], imgs[11]]; // In the Song button images
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  eraserTimer = new easyTimer(200, function (self) {
+    // If current is not end mark, just return;
+    if (CurChar != 16) {
+      self.switch = false;
+      return;
+    }
+    self.currentFrame = (self.currentFrame == 0) ? 1 : 0;
+  });
+  eraserTimer.currentFrame = 0;
+  b.addEventListener("click", function() {
+    eraserTimer.switch = true;
+    CurChar = 16;
+    SOUNDS[17].play(8);
+    drawEraserIcon();
+    clearSongButtons();
+    this.style.backgroundImage = "url(" + this.images[1].src + ")";
+    SCREEN.style.cursor = 'url(' + this.images[2].src + ')' + ' 0 0, auto';
+  });
+  CONSOLE.appendChild(b);
+
   // Prepare tempo range
   // (116, 172) width 40px, height 8px
   var r = document.createElement('input');
@@ -1209,8 +1249,6 @@ function onload() {
   // Load Sound Files
   Promise.all(SOUNDS.map(function (s) {return s.load()})).then(function (all) {
     all.map(function (buffer, i) {
-      console.log("i = " + i);
-      console.log("buffer = " + buffer);
       SOUNDS[i].buffer = buffer;
     });
 
@@ -1341,6 +1379,13 @@ function clearSongButtons() {
     b.style.backgroundImage = "url(" + b.images[0].src + ")";
   });
   CurSong = undefined;
+}
+
+// Clear Eraser Button
+function clearEraserButton() {
+  var b = document.getElementById('eraser');
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+  eraserTimer.switch = false;
 }
 
 // Full Initialize Score
