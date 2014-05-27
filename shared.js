@@ -109,36 +109,39 @@ SoundEntity.prototype.playChord = function(noteList, delay) {
 }
 
 SoundEntity.prototype.load = function() {
-  // Load buffer asynchronously
-  var request = new XMLHttpRequest();
-  request.open("GET", this.path, true);
-  request.responseType = "arraybuffer";
-
-  var loader = this;
-
-  request.onload = function() {
-    // Asynchronously decode the audio file data in request.response
-    AC.decodeAudioData(
-      request.response,
-      function(buffer) {
-        if (!buffer) {
-          alert('error decoding file data: ' + url);
-          return;
-        }
-        loader.buffer = buffer;
-      },
-      function(error) {
-        console.error('decodeAudioData error', error);
-      }
-    );
-  }
-
-  request.onerror = function() {
-    alert('BufferLoader: XHR error');
-  }
-
-  request.send();
+  return createPromiseToLoad(this.path);
 };
+
+function createPromiseToLoad(filepath) {
+  return new Promise(function (resolve, reject) {
+    // Load buffer asynchronously
+    var request = new XMLHttpRequest();
+    request.open("GET", filepath, true);
+    request.responseType = "arraybuffer";
+
+    request.onload = function() {
+      // Asynchronously decode the audio file data in request.response
+      AC.decodeAudioData(
+        request.response,
+        function(buffer) {
+          if (!buffer) {
+            reject('error decoding file data: ' + url);
+          }
+          resolve(buffer);
+        },
+        function(error) {
+          reject('decodeAudioData error:' + error);
+        }
+      );
+    }
+
+    request.onerror = function() {
+      reject('BufferLoader: XHR error');
+    }
+
+    request.send();
+  });
+}
 
 // It's me, Mario!
 function MarioClass() {
@@ -384,9 +387,15 @@ for (i = 1; i < 21; i++) {
   tmp += i.toString();
   var file = "wav/sound" + tmp.substr(-2) + ".wav";
   var e = new SoundEntity(file);
-  e.load();
   SOUNDS[i-1] = e;
 }
+Promise.all(SOUNDS.map(function (s) {s.load()})).then(function (all) {
+  all.map(function (buffer, i) {
+    SOUNDS[i].buffer = buffer;
+  });
+
+  CONSOLE.removeChild(document.getElementById("spinner"));
+});
 
 // Prepare Mat
 MAT = document.getElementById("layer1");
@@ -825,7 +834,7 @@ SCREEN.addEventListener("drop", function(e) {
     }
     return strip(n1) - strip(n2);
   });
-  var last = files.map(readFile).reduce(function(chain, fp, idx) {
+  files.map(readFile).reduce(function(chain, fp, idx) {
     return chain.then(function() {
       return fp;
     }).then(function(fileReader) {
@@ -839,10 +848,8 @@ SCREEN.addEventListener("drop", function(e) {
     }).catch(function(err) {
       alert("Loading MSQ failed: " + err.message);
     });
-  }, Promise.resolve());
-
-  // Finally, after reducing, set parameters to Score
-  last.then(function () {
+  }, Promise.resolve()).then(function () {
+    // Finally, after reducing, set parameters to Score
     var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
     var e = new Event("click");
     e.soundOff = true;
