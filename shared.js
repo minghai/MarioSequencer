@@ -389,13 +389,6 @@ for (i = 1; i < 21; i++) {
   var e = new SoundEntity(file);
   SOUNDS[i-1] = e;
 }
-Promise.all(SOUNDS.map(function (s) {s.load()})).then(function (all) {
-  all.map(function (buffer, i) {
-    SOUNDS[i].buffer = buffer;
-  });
-
-  CONSOLE.removeChild(document.getElementById("spinner"));
-});
 
 // Prepare Mat
 MAT = document.getElementById("layer1");
@@ -1211,6 +1204,15 @@ function onload() {
 
   // Start Animation
   requestAnimFrame(doAnimation);
+
+  // Load Sound Files
+  Promise.all(SOUNDS.map(function (s) {s.load()})).then(function (all) {
+    all.map(function (buffer, i) {
+      SOUNDS[i].buffer = buffer;
+    });
+
+    CONSOLE.removeChild(document.getElementById("spinner"));
+  });
 }
 
 // Clear Button Listener
