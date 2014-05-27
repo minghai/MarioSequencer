@@ -127,6 +127,7 @@ function createPromiseToLoad(filepath) {
           if (!buffer) {
             reject('error decoding file data: ' + url);
           }
+          console.log("buffer = " + buffer);
           resolve(buffer);
         },
         function(error) {
@@ -1206,8 +1207,10 @@ function onload() {
   requestAnimFrame(doAnimation);
 
   // Load Sound Files
-  Promise.all(SOUNDS.map(function (s) {s.load()})).then(function (all) {
+  Promise.all(SOUNDS.map(function (s) {return s.load()})).then(function (all) {
     all.map(function (buffer, i) {
+      console.log("i = " + i);
+      console.log("buffer = " + buffer);
       SOUNDS[i].buffer = buffer;
     });
 
