@@ -854,7 +854,7 @@ function addMSQ(text) {
     var k = kv[0];
     var v = kv[1];
     if (i < keyword.length && k !== keyword[i]) {
-      throw new Error(fileReader.name + " :" + "line " + i + " must start with '" + keyword[i] + "'");
+      throw new Error("Line " + i + " must start with '" + keyword[i] + "'");
     }
     this[k] = v;
   }, values);
@@ -1300,6 +1300,7 @@ function onload() {
       var tmp = s.split('=');
       opts[tmp[0]] = tmp[1];
     });
+    console.log(opts);
 
     if (opts['url'] != undefined) {
       fullInitScore();
@@ -1329,22 +1330,55 @@ function onload() {
         
         closing(); 
 
-        var auto = opts['a'] || opts['auto'];
-        if (auto != undefined) {
-          auto = auto.toUpperCase();
-          if (auto == "T" || auto == "TRUE")
-            document.getElementById("play").dispatchEvent(new Event("click"));
-        }
+        autoPlayIfDemanded(opts);
+
       }).catch(function (err) {
         alert("Downloading File: " + url + " failed :" + err);
-        console.log("Downloading File: " + url + " failed :" + err.stack);
+        console.error("Downloading File: " + url + " failed :" + err.stack);
       })
-    };
+    } else if (opts.S != undefined || opts.SCORE != undefined) {
+      var score = opts.SCORE || opts.S;
+      var tempo = opts.TEMPO || opts.T;
+      var loop  = (opts.LOOP  || opts.L);
+      var end   = opts.END   || opts.E;
+      var beats = (opts.TIME44 || opts.B);
+
+      if (tempo == undefined || loop == undefined || end == undefined ||
+          beats == undefined) {
+        throw new Error("Not enough parameters");
+      }
+
+      loop  = loop.toUpperCase();
+      beats = beats.toUpperCase();
+
+      var text = "SCORE=" + score + "\n" +
+                 "TEMPO=" + tempo + "\n" +
+                 "LOOP=" + ((loop == "T" || loop == "TRUE") ? "TRUE" : "FALSE") + "\n" +
+                 "END=" + end + "\n" +
+                 "TIME44=" + ((beats == "T" || beats == "TRUE") ? "TRUE" : "FALSE");
+      fullInitScore();
+      console.log(text);
+      addMSQ(text);
+      closing();
+
+      autoPlayIfDemanded(opts);
+    }
+  }).catch(function (err) {
+    alert("Invalid GET parameter :" + err);
+    console.error("Invalid GET parameter :" + err.stack);
   });
 
   requestAnimFrame(doAnimation); 
 }
 
+function autoPlayIfDemanded(opts) {
+  var auto = opts['a'] || opts['auto'];
+  if (auto != undefined) {
+    auto = auto.toUpperCase();
+    if (auto == "T" || auto == "TRUE")
+      document.getElementById("play").dispatchEvent(new Event("click"));
+  }
+}
 // Clear Button Listener
 function clearListener(e) {
   this.style.backgroundImage = "url(" + this.images[1].src + ")";
