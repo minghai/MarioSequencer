@@ -8,7 +8,7 @@
 //   Variables: CamelCase
 AC = (window.AudioContext) ? new AudioContext() : new webkitAudioContext();
 SEMITONERATIO = Math.pow(2, 1/12);
-MAGNIFY = 3;
+MAGNIFY = 2;
 CHARSIZE = 16 * MAGNIFY;
 HALFCHARSIZE = Math.floor(CHARSIZE / 2);
 MouseX = 0;
@@ -16,6 +16,11 @@ MouseY = 0;
 CONSOLE = document.getElementById("console");
 OFFSETLEFT = CONSOLE.offsetLeft;
 OFFSETTOP  = CONSOLE.offsetTop;
+ORGWIDTH  = 256;
+ORGHEIGHT = 224;
+SCOHEIGHT = 152;
+CONSOLE.style.width  = ORGWIDTH  * MAGNIFY + "px";
+CONSOLE.style.height = ORGHEIGHT * MAGNIFY + "px";
 CurChar = 0;
 CurPos = 0;
 CurSong = undefined; // For Embedded Songs
@@ -109,10 +114,7 @@ SoundEntity.prototype.playChord = function(noteList, delay) {
 }
 
 SoundEntity.prototype.load = function() {
-  return createPromiseToLoad(this.path);
-};
-
-function createPromiseToLoad(filepath) {
+  var filepath = this.path;
   return new Promise(function (resolve, reject) {
     // Load buffer asynchronously
     var request = new XMLHttpRequest();
@@ -141,7 +143,7 @@ function createPromiseToLoad(filepath) {
 
     request.send();
   });
-}
+};
 
 // It's me, Mario!
 function MarioClass() {
@@ -225,7 +227,12 @@ MarioClass.prototype.init4playing = function(timeStamp) {
 
 MarioClass.prototype.checkMarioShouldJump = function() {
   var notes = CurScore.notes[this.pos - 1];
-  this.isJumping = (notes != undefined && notes.length > 0); 
+  if (notes == undefined || notes.length == 0) {
+    this.isJumping = false;
+  } else if (notes.length == 1) {
+    this.isJumping = (typeof notes[0] != 'string');
+  } else
+    this.isJumping = true;
 };
 
 MarioClass.prototype.play = function(timeStamp) {
@@ -391,6 +398,8 @@ for (i = 1; i < 21; i++) {
 
 // Prepare Mat
 MAT = document.getElementById("layer1");
+MAT.width  = ORGWIDTH  * MAGNIFY;
+MAT.height = ORGHEIGHT * MAGNIFY;
 L1C = MAT.getContext('2d');
 L1C.imageSmoothingEnabled = false;
 var mi = new Image();
@@ -774,72 +783,8 @@ SCREEN.addEventListener("drop", function(e) {
       });
       reader.readAsText(file, 'shift-jis');
     });
-  };
-  function addMSQ(fileReader) {
-    lines = fileReader.result.split(/\r\n|\r|\n/);
-    keyword = ["SCORE", "TEMPO", "LOOP", "END", "TIME44"];
-    var values = {};
-    lines.forEach(function(line, i) {
-      if (line === "") return;
-      var kv = line.split("=");
-      var k = kv[0];
-      var v = kv[1];
-      if (i < keyword.length && k !== keyword[i]) {
-        throw new Error(fileReader.name + " :" + "line " + i + " must start with '" + keyword[i] + "'");
-      }
-      this[k] = v;
-    }, values);
-    
-    var oldEnd = CurScore.end;
-    var s = values.SCORE;
-    var i = 0, count = CurScore.end;
-    // MSQ format is variable length string.
-    out:
-    while (i < s.length) {
-      var bar = [];
-      for (var j = 0; j < 3; j++) {
-        if (s[i] === "\r" || s[i] == undefined) break out;
-        var scale = parseInt(s[i++], 16);
-        if (scale !== 0) {
-          scale -= 1;
-          var tone = parseInt(s[i++], 16) - 1;
-          var note = (tone << 8) | scale;
-          bar.push(note);
-        }
-      }
-      CurScore.notes[count++] = bar;
-    }
-
-    CurScore.end  += parseInt(values.END) - 1;
-    if (CurScore.tempo != values.TEMPO)
-      CurScore.notes[oldEnd].splice(0, 0, "TEMPO=" + values.TEMPO);
-    CurScore.tempo = values.TEMPO;
-    var beats = (values.TIME44 == "TRUE") ? 4 : 3;
-    CurScore.beats = beats;
-    var lf = (values.LOOP == "TRUE") ? true : false;
-    // click listener will set CurScore.loop
-    b = document.getElementById("loop");
-    lf ? b.set() : b.reset();
-  };
-  function addJSON(fileReader) {
-    var json = JSON.parse(fileReader.result);
-    for (var i = 0; i < json.end; i++)
-      CurScore.notes.push(json.notes[i]);
-
-    var notes = CurScore.notes[CurScore.end];
-    if (CurScore.tempo != json.tempo && notes.length != 0) {
-      var tempostr = notes[0];
-      if (typeof tempostr != "string") {
-        notes.splice(0, 0, "TEMPO=" + json.tempo);
-      }
-    }
-    CurScore.tempo = json.tempo;
-
-    CurScore.end += json.end;
-
-    b = document.getElementById("loop");
-    if (CurScore.loop) b.set; else b.reset();
   }
+
   // FileList to Array for Mapping
   var files = [].slice.call(e.dataTransfer.files);
   // Support Mr.Phenix's files. He numbered files with decimal numbers :-)
@@ -860,40 +805,120 @@ SCREEN.addEventListener("drop", function(e) {
     return chain.then(function() {
       return fp;
     }).then(function(fileReader) {
-      fileReader.idx = idx;
       var ext = fileReader.name.slice(-3);
       if (ext == "msq") {
-        addMSQ(fileReader);
+        addMSQ(fileReader.result);
       } else {
-        addJSON(fileReader);
+        addJSON(fileReader.result);
       }
     }).catch(function(err) {
       alert("Loading MSQ failed: " + err.message);
+      console.log(err);
     });
-  }, Promise.resolve()).then(function () {
-    // Finally, after reducing, set parameters to Score
-    var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
-    var e = new Event("click");
-    e.soundOff = true;
-    b.dispatchEvent(e);
-
-    var r = document.getElementById('scroll');
-    CurMaxBars = CurScore.end + 1;
-    r.max = CurMaxBars - 6;
-    r.value = 0;
-    CurPos = 0;
-
-    var tempo = CurScore.notes[0][0];
-    if (tempo.substr(0, 5) == "TEMPO") {
-      tempo = tempo.split("=")[1];
-      CurScore.tempo = tempo;
-      document.getElementById("tempo").value = tempo;
-    }
-  });
+  }, Promise.resolve())
+  .then(closing);
 
   return false;
 });
 
+// Closing to add files to the score
+//   Configure Score parameters 
+function closing() {
+  // Finally, after reducing, set parameters to Score
+  var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
+  var e = new Event("click");
+  e.soundOff = true;
+  b.dispatchEvent(e);
+
+  var r = document.getElementById('scroll');
+  CurMaxBars = CurScore.end + 1;
+  r.max = CurMaxBars - 6;
+  r.value = 0;
+  CurPos = 0;
+
+  var tempo = CurScore.notes[0][0];
+  if (typeof tempo == "string" && tempo.substr(0, 5) == "TEMPO") {
+    tempo = tempo.split("=")[1];
+    CurScore.tempo = tempo;
+    document.getElementById("tempo").value = tempo;
+  }
+}
+
+function addMSQ(text) {
+  lines = text.split(/\r\n|\r|\n/);
+  keyword = ["SCORE", "TEMPO", "LOOP", "END", "TIME44"];
+  var values = {};
+  lines.forEach(function(line, i) {
+    if (line === "") return;
+    var kv = line.split("=");
+    var k = kv[0];
+    var v = kv[1];
+    if (i < keyword.length && k !== keyword[i]) {
+      throw new Error(fileReader.name + " :" + "line " + i + " must start with '" + keyword[i] + "'");
+    }
+    this[k] = v;
+  }, values);
+  
+  var oldEnd = CurScore.end;
+  var s = values.SCORE;
+  var i = 0, count = CurScore.end;
+  // MSQ format is variable length string.
+  out:
+  while (i < s.length) {
+    var bar = [];
+    for (var j = 0; j < 3; j++) {
+      if (s[i] === "\r" || s[i] == undefined) break out;
+      var scale = parseInt(s[i++], 16);
+      if (scale !== 0) {
+        scale -= 1;
+        var tone = parseInt(s[i++], 16) - 1;
+        var note = (tone << 8) | scale;
+        if (note < 0) {
+          console.log (scale.toString(16));
+          console.log(tone.toString(16));
+          console.log (s[i - 1]);
+        }
+        bar.push(note);
+      }
+    }
+    CurScore.notes[count++] = bar;
+  }
+
+  CurScore.end  += parseInt(values.END) - 1;
+  if (CurScore.tempo != values.TEMPO)
+    CurScore.notes[oldEnd].splice(0, 0, "TEMPO=" + values.TEMPO);
+  CurScore.tempo = values.TEMPO;
+  var beats = (values.TIME44 == "TRUE") ? 4 : 3;
+  CurScore.beats = beats;
+  // click listener will set CurScore.loop
+  b = document.getElementById("loop");
+  (values.LOOP == "TRUE") ? b.set() : b.reset();
+}
+
+// addJSON
+//   Prase JSON and add contents into CurScore
+//   Input parameter type is FileReader,
+//   but use only its result property.
+//   This means you can use any object with result.
+function addJSON(text) {
+  var json = JSON.parse(text);
+  for (var i = 0; i < json.end; i++)
+    CurScore.notes.push(json.notes[i]);
+
+  var notes = CurScore.notes[CurScore.end];
+  if (CurScore.tempo != json.tempo && notes.length != 0) {
+    var tempostr = notes[0];
+    if (typeof tempostr != "string") {
+      notes.splice(0, 0, "TEMPO=" + json.tempo);
+    }
+  }
+  CurScore.tempo = json.tempo;
+
+  CurScore.end += json.end;
+
+  b = document.getElementById("loop");
+  if (CurScore.loop) b.set; else b.reset();
+}
 
 function doAnimation(time) {
   // Bomb
@@ -1259,9 +1284,6 @@ function onload() {
   // Make Semitone images
   Semitones = sliceImage(semitoneimg, 5, 12);
 
-  // Start Animation
-  requestAnimFrame(doAnimation);
-
   // Load Sound Files
   Promise.all(SOUNDS.map(function (s) {return s.load()})).then(function (all) {
     all.map(function (buffer, i) {
@@ -1269,7 +1291,58 @@ function onload() {
     });
 
     CONSOLE.removeChild(document.getElementById("spinner"));
+
+    var prmstr = window.location.search.substr(1);
+    if (prmstr == null || prmstr == "") return;
+
+    var opts = {};
+    prmstr.split('&').forEach(function (s) {
+      var tmp = s.split('=');
+      opts[tmp[0]] = tmp[1];
+    });
+
+    if (opts['url'] != undefined) {
+      fullInitScore();
+      var url = opts['url'];
+      new Promise(function (resolve, reject) {
+        var req = new XMLHttpRequest();
+        req.open('GET', url);
+        req.onload = function() {
+          if (req.status == 200) {
+            resolve(req.response);
+          } else {
+            reject(Error(req.statusText));
+          }
+        };
+
+        req.onerror = function() {
+          reject(Error("Network Error"));
+        };
+
+        req.send();
+      }).then(function(response) {
+        var msq = false;
+        if (url.slice(-3) == "msq")
+          addMSQ(response);
+        else
+          addJSON(response);
+        
+        closing(); 
+
+        var auto = opts['a'] || opts['auto'];
+        if (auto != undefined) {
+          auto = auto.toUpperCase();
+          if (auto == "T" || auto == "TRUE")
+            document.getElementById("play").dispatchEvent(new Event("click"));
+        }
+      }).catch(function (err) {
+        alert("Downloading File: " + url + " failed :" + err);
+        console.log("Downloading File: " + url + " failed :" + err.stack);
+      })
+    };
   });
+
+  requestAnimFrame(doAnimation); 
 }
 
 // Clear Button Listener
