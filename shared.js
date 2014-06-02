@@ -14,13 +14,13 @@ HALFCHARSIZE = Math.floor(CHARSIZE / 2);
 MouseX = 0;
 MouseY = 0;
 CONSOLE = document.getElementById("console");
-OFFSETLEFT = CONSOLE.offsetLeft;
-OFFSETTOP  = CONSOLE.offsetTop;
 ORGWIDTH  = 256;
 ORGHEIGHT = 224;
 SCOHEIGHT = 152;
 CONSOLE.style.width  = ORGWIDTH  * MAGNIFY + "px";
 CONSOLE.style.height = ORGHEIGHT * MAGNIFY + "px";
+OFFSETLEFT = CONSOLE.offsetLeft;
+OFFSETTOP  = CONSOLE.offsetTop;
 CurChar = 0;
 CurPos = 0;
 CurSong = undefined; // For Embedded Songs
@@ -663,7 +663,7 @@ function drawEraserIcon() {
 }
 
 function toGrid(realX, realY) {
-  var gridLeft   = (8      ) * MAGNIFY;
+  var gridLeft   = (8   + 8) * MAGNIFY;
   var gridTop    = (41     ) * MAGNIFY;
   var gridRight  = (247 - 4) * MAGNIFY;
   var gridBottom = (148 - 4) * MAGNIFY;
@@ -873,11 +873,6 @@ function addMSQ(text) {
         scale -= 1;
         var tone = parseInt(s[i++], 16) - 1;
         var note = (tone << 8) | scale;
-        if (note < 0) {
-          console.log (scale.toString(16));
-          console.log(tone.toString(16));
-          console.log (s[i - 1]);
-        }
         bar.push(note);
       }
     }
@@ -1300,7 +1295,6 @@ function onload() {
       var tmp = s.split('=');
       opts[tmp[0]] = tmp[1];
     });
-    console.log(opts);
 
     if (opts['url'] != undefined) {
       fullInitScore();
@@ -1357,7 +1351,6 @@ function onload() {
                  "END=" + end + "\n" +
                  "TIME44=" + ((beats == "T" || beats == "TRUE") ? "TRUE" : "FALSE");
       fullInitScore();
-      console.log(text);
       addMSQ(text);
       closing();
 
@@ -1537,7 +1530,10 @@ function initScore() {
   CurScore.end = DEFAULTMAXBARS - 1;
   CurScore.tempo = DEFAULTTEMPO;
   document.getElementById("tempo").value = DEFAULTTEMPO;
-  //CurScore = clone(EmbeddedSong[1]);
+  CurScore.beats = 4;
+  var e = new Event("click");
+  e.soundOff = true;
+  document.getElementById("4beats").dispatchEvent(e);
 }
 
 // Easiest and Fastest way to clone
