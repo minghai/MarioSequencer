@@ -1280,15 +1280,18 @@ function onload() {
 
   // It's very hard to set values to a pseudo element with JS.
   // http://pankajparashar.com/posts/modify-pseudo-elements-css/
-  s.sheet.insertRule('#scroll::-webkit-slider-thumb {' +
-	  "-webkit-appearance: none !important;" +
-	  "border-radius: 0px;" +
-	  "background-color: #A870D0;" +
-	  "box-shadow:inset 0 0 0px;" +
-	  "border: 0px;" +
-	  "width: " + 5 * MAGNIFY + "px;" +
-	  "height:" + 7 * MAGNIFY + 'px;}', 0
-  );
+  try {
+    s.sheet.insertRule('#scroll::-webkit-slider-thumb {' +
+  	  "-webkit-appearance: none !important;" +
+  	  "border-radius: 0px;" +
+  	  "background-color: #A870D0;" +
+  	  "box-shadow:inset 0 0 0px;" +
+  	  "border: 0px;" +
+  	  "width: " + 5 * MAGNIFY + "px;" +
+  	  "height:" + 7 * MAGNIFY + 'px;}', 0
+    );
+  } catch (e) {
+  }
   s.sheet.insertRule('#scroll:focus {outline: none !important;}', 0);
 
   // Make number images from the number sheet
@@ -1420,15 +1423,18 @@ function onload() {
   r.image = t;
   // It's very hard to set values to a pseudo element with JS.
   // http://pankajparashar.com/posts/modify-pseudo-elements-css/
-  s.sheet.insertRule('#tempo::-webkit-slider-thumb {' +
-	  "-webkit-appearance: none !important;" +
-    "background-image: url('" + t.src + "');" +
-    "background-repeat: no-repeat;" +
-    "background-size: 100% 100%;" +
-	  "border: 0px;" +
-	  "width: " + 5 * MAGNIFY + "px;" +
-	  "height:" + 8 * MAGNIFY + 'px;}', 0
-  );
+  try {
+    s.sheet.insertRule('#tempo::-webkit-slider-thumb {' +
+        "-webkit-appearance: none !important;" +
+      "background-image: url('" + t.src + "');" +
+      "background-repeat: no-repeat;" +
+      "background-size: 100% 100%;" +
+        "border: 0px;" +
+        "width: " + 5 * MAGNIFY + "px;" +
+        "height:" + 8 * MAGNIFY + 'px;}', 0
+    );
+  } catch (e) {
+  }
   s.sheet.insertRule('#tempo:focus {outline: none !important;}', 0);
 
   // Prepare range's side buttons for inc/decrements
