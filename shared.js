@@ -1437,8 +1437,7 @@ function onload() {
   b.addEventListener("click", function (e) {
     var r = document.getElementById('scroll');
     if (r.value > 0) {
-      r.value--;
-      CurPos--;
+      CurPos = --r.value;
     }
   });
   CONSOLE.appendChild(b);
@@ -1448,8 +1447,7 @@ function onload() {
   b.addEventListener("click", function (e) {
     var r = document.getElementById('scroll');
     if (r.value < CurMaxBars - 6) {
-      r.value++;
-      CurPos++;
+      CurPos = ++r.value;
     }
   });
   CONSOLE.appendChild(b);
