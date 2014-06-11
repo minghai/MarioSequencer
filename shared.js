@@ -3,20 +3,28 @@
  *    Programmed by minghai (http://github.com/minghai)
  */
 
+// First, check the parameters to get MAGNIFY
+var OPTS = {};
+window.location.search.substr(1).split('&').forEach(function (s) {
+  var tmp = s.split('=');
+  OPTS[tmp[0]] = tmp[1];
+});
+
 // GLOBAL VARIABLES
 //   Constants: Full capital letters
 //   Variables: CamelCase
 AC = (window.AudioContext) ? new AudioContext() : new webkitAudioContext();
 SEMITONERATIO = Math.pow(2, 1/12);
-MAGNIFY = 2;
+MAGNIFY = OPTS.mag || OPTS.magnify || 2;
 CHARSIZE = 16 * MAGNIFY;
 HALFCHARSIZE = Math.floor(CHARSIZE / 2);
+BUTTONS = [];
 MouseX = 0;
 MouseY = 0;
 CONSOLE = document.getElementById("console");
 ORGWIDTH  = 256;
 ORGHEIGHT = 224;
-SCOHEIGHT = 152;
+SCRHEIGHT = 152;
 CONSOLE.style.width  = ORGWIDTH  * MAGNIFY + "px";
 CONSOLE.style.height = ORGHEIGHT * MAGNIFY + "px";
 OFFSETLEFT = CONSOLE.offsetLeft;
@@ -30,6 +38,9 @@ DEFAULTTEMPO = 100;
 CurMaxBars = DEFAULTMAXBARS;
 Mario = null; // Mamma Mia!
 AnimeID = 0; // ID for cancel animation
+PsedoSheet = null // CSSRules for manipulating pseudo elements
+RepeatMark = null // For Score
+EndMark    = null
 
 /*
  * GameStatus: Game mode
@@ -404,9 +415,9 @@ L1C = MAT.getContext('2d');
 L1C.imageSmoothingEnabled = false;
 var mi = new Image();
 mi.src = "image/mat.png";
-mi.addEventListener("load", function(e) {
+mi.onload = function() {
   L1C.drawImage(mi, 0, 0, mi.width * MAGNIFY, mi.height * MAGNIFY);
-});
+};
 
 // Prepare Characters
 char_sheet = new Image();
@@ -423,7 +434,8 @@ bombTimer.currentFrame = 0;
 function drawBomb(mySelf) {
   var x = 9 * MAGNIFY;
   var y = 202 * MAGNIFY;
-  L1C.drawImage(BOMBS[mySelf.currentFrame], x, y);
+  var img = BOMBS[mySelf.currentFrame];
+  L1C.drawImage(img, x, y);
   switch (mySelf.currentFrame) {
     case 0:
       mySelf.currentFrame = 1;
@@ -501,7 +513,7 @@ function drawScore(pos, notes, scroll) {
   // Clip only X
   L2C.clearRect(0, 0, SCREEN.width, SCREEN.height);
   L2C.save();
-  L2C.rect(8 * MAGNIFY, 0, (247 - 8 + 1) * MAGNIFY, 152 * MAGNIFY);
+  L2C.rect(8 * MAGNIFY, 0, (247 - 8 + 1) * MAGNIFY, SCRHEIGHT * MAGNIFY);
   L2C.clip();
 
   // If mouse cursor on or under the C, draw horizontal line
@@ -534,7 +546,6 @@ function drawScore(pos, notes, scroll) {
 
   //ORANGE #F89000
   var beats = CurScore.beats;
-  var dashList = [MAGNIFY, MAGNIFY];
   // orange = 2, 1, 0, 3, 2, 1, 0, 3, ..... (if beats = 4)
   //        = 2, 1, 0, 2, 1, 0, 2, 1, ..... (if beats = 3)
   var orange = (beats == 4) ? 3 - ((pos + 1) % 4) : 2 - ((pos + 3) % 3);
@@ -550,7 +561,7 @@ function drawScore(pos, notes, scroll) {
     }
 
     L2C.beginPath();
-    L2C.setLineDash(dashList);
+    L2C.setLineDash([MAGNIFY, MAGNIFY]);
     L2C.lineWidth = MAGNIFY;
     if (i % beats == orange) {
       if (GameStatus == 0) drawBarNumber(i, barnum / beats + 1);
@@ -593,7 +604,7 @@ function drawScore(pos, notes, scroll) {
         hflag = true;
         drawHorizontalBar(i, scroll);
       }
-      L2C.drawImage(SOUNDS[sndnum].image, x - 8 * MAGNIFY,
+      L2C.drawImage(SOUNDS[sndnum].image, x - HALFCHARSIZE,
         (40 + scale * 8 + delta) * MAGNIFY);
 
       var x2 = (x - 13 * MAGNIFY);
@@ -604,6 +615,17 @@ function drawScore(pos, notes, scroll) {
         L2C.drawImage(Semitones[1], x2, y);
       }
     }
+  }
+  if (GameStatus == 0) {
+    L2C.beginPath();
+    L2C.setLineDash([7 * MAGNIFY, 2 * MAGNIFY, 7 * MAGNIFY, 0]);
+    L2C.lineWidth = MAGNIFY;
+    L2C.strokeStyle = '#F00';
+    var xorg = (16 + 32 * gridX - 8);
+    var x = xorg * MAGNIFY;
+    var y = (40 + gridY * 8) * MAGNIFY;
+    L2C.rect(x, y, CHARSIZE, CHARSIZE);
+    L2C.stroke();
   }
   L2C.restore();
 }
@@ -663,7 +685,7 @@ function drawEraserIcon() {
 }
 
 function toGrid(realX, realY) {
-  var gridLeft   = (8   + 8) * MAGNIFY;
+  var gridLeft   = (8   + 0) * MAGNIFY;
   var gridTop    = (41     ) * MAGNIFY;
   var gridRight  = (247 - 4) * MAGNIFY;
   var gridBottom = (148 - 4) * MAGNIFY;
@@ -686,8 +708,8 @@ function toGrid(realX, realY) {
 SCREEN = document.getElementById("layer2");
 // You should not use .style.width(or height) here.
 // You must not append "px" here.
-SCREEN.width  = 256 * MAGNIFY;
-SCREEN.height = 152 * MAGNIFY;
+SCREEN.width  = ORGWIDTH  * MAGNIFY;
+SCREEN.height = SCRHEIGHT * MAGNIFY;
 L2C = SCREEN.getContext('2d');
 L2C.imageSmoothingEnabled = false;
 // Delete
@@ -932,13 +954,194 @@ function makeButton(x, y, w, h) {
   var b = document.createElement("button");
   b.className = "game";
   b.style.position = 'absolute';
-  b.style.left =   x * MAGNIFY + "px";
-  b.style.top =    y * MAGNIFY + "px";
-  b.style.width =  w * MAGNIFY + "px";
-  b.style.height = h * MAGNIFY + "px";
+  moveDOM(b, x, y);
+  resizeDOM(b, w, h);
   b.style['z-index'] = 3;
   b.style.background = "rgba(0,0,0,0)";
+
+  // Save position and size for later use
+  b.originalX = x;
+  b.originalY = y;
+  b.originalW = w;
+  b.originalH = h;
+  b.redraw = function() {
+    moveDOM(this, this.originalX, this.originalY);
+    resizeDOM(this, this.originalW, this.originalH);
+  }
   return b;
+}
+
+function resizeDOM(b, w, h) {
+  b.style.width =  w * MAGNIFY + "px";
+  b.style.height = h * MAGNIFY + "px";
+}
+
+function moveDOM(b, x, y) {
+  b.style.left =   x * MAGNIFY + "px";
+  b.style.top =    y * MAGNIFY + "px";
+}
+
+// Select Listener
+function selectListener(e) {
+  console.log(e);
+  MAGNIFY = e.target.selectedIndex + 1;
+  resizeScreen();
+}
+
+// resize screen using MAGNIFY
+//   If we can use Elm.style.imageRendering = Crisp-edged,
+//   You can avoid these re-configuring. Sigh.
+function resizeScreen() {
+  CHARSIZE = 16 * MAGNIFY;
+  HALFCHARSIZE = Math.floor(CHARSIZE / 2);
+
+  CONSOLE.style.width  = ORGWIDTH  * MAGNIFY + "px";
+  CONSOLE.style.height = ORGHEIGHT * MAGNIFY + "px";
+  OFFSETLEFT = CONSOLE.offsetLeft;
+  OFFSETTOP  = CONSOLE.offsetTop;
+
+  BOMBS = sliceImage(bombimg, 14, 18);
+  Mario.images = sliceImage(marioimg, 16, 22);
+  Semitones = sliceImage(semitoneimg, 5, 12);
+
+  MAT.width  = ORGWIDTH  * MAGNIFY;
+  MAT.height = ORGHEIGHT * MAGNIFY;
+  L1C.drawImage(mi, 0, 0, mi.width * MAGNIFY, mi.height * MAGNIFY);
+
+  SCREEN.width  = ORGWIDTH  * MAGNIFY;
+  SCREEN.height = SCRHEIGHT * MAGNIFY;
+
+  var imgs = sliceImage(char_sheet, 16, 16);
+  for (var i = 0; i < BUTTONS.length; i++) {
+    var b = BUTTONS[i];
+    b.redraw();
+    if (i < 15) b.se.image = imgs[i];
+  }
+  BUTTONS[15].images = sliceImage(endimg, 14, 13);
+  endMarkTimer.images = BUTTONS[15].images;
+
+  // Endmark Cursor (= 15) will be redrawn by its animation
+  // Eraser (= 16) will be redrawn later below
+  if (CurChar < 15) {
+   changeCursor(CurChar);
+  }
+
+  if (CurChar == 15)
+    drawEndMarkIcon(BUTTONS[15].images[0]);
+  else if (CurChar == 16)
+    drawEraserIcon(); 
+  else
+    drawCurChar(SOUNDS[CurChar].image);
+  
+  var b = document.getElementById("play");
+  b.redraw();
+  b.images = sliceImage(playbtnimg, 12, 15);
+  var num = b.disabled ? 1 : 0;
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+
+  var b = document.getElementById("stop");
+  b.redraw();
+  var imgs = sliceImage(stopbtnimg, 16, 15);
+  b.images = [imgs[0], imgs[1]];
+  b.style.backgroundImage = "url(" + b.images[1 - num].src + ")";
+
+  var b = document.getElementById("loop");
+  b.redraw();
+  b.images = [imgs[2], imgs[3]]; // made in Stop button (above)
+  var num = CurScore.loop ? 1 : 0;
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+  
+  // Prepare Repeat (global!)
+  RepeatMarks = sliceImage(repeatimg, 13, 62);
+  EndMark = RepeatMarks[2];
+
+  var b = document.getElementById("scroll");
+  moveDOM(b, b.originalX, b.originalY);
+  resizeDOM(b, b.originalW, b.originalH);
+  var rules = PseudoSheet.cssRules;
+  for (var i = 0; i < rules.length; i++) {
+    if (rules[i].selectorText == "#scroll::-webkit-slider-thumb") {
+      PseudoSheet.deleteRule(i);
+      PseudoSheet.insertRule('#scroll::-webkit-slider-thumb {' +
+        "-webkit-appearance: none !important;" +
+        "border-radius: 0px;" +
+        "background-color: #A870D0;" +
+        "box-shadow:inset 0 0 0px;" +
+        "border: 0px;" +
+        "width: " + 5 * MAGNIFY + "px;" +
+        "height:" + 7 * MAGNIFY + 'px;}', 0
+      );
+    }
+  }
+  var b = document.getElementById("toLeft");
+  b.redraw();
+  var b = document.getElementById("toRight");
+  b.redraw();
+  var b = document.getElementById("clear");
+  b.redraw();
+  b.images = sliceImage(clearimg, 34, 16);
+  b.style.backgroundImage = "url(" + b.images[0].src + ")";
+
+  // Make number images from the number sheet
+  NUMBERS = sliceImage(numimg, 5, 7);
+
+  var b = document.getElementById("3beats");
+  b.redraw();
+  var imgs = sliceImage(beatimg, 14, 15);
+  b.images = [imgs[0], imgs[1]];
+  var num = (CurScore.beats == 3) ? 1 : 0;
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+  var b = document.getElementById("4beats");
+  b.redraw();
+  b.images = [imgs[2], imgs[3]];
+  b.style.backgroundImage = "url(" + b.images[1 - num].src + ")";
+
+  var b = document.getElementById("frog");
+  b.redraw();
+  var imgs = sliceImage(songimg, 15, 17);
+  b.images = [imgs[0], imgs[1], imgs[2]];
+  var num = (CurSong === b) ? 1 : 0;
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+  var b = document.getElementById("beak");
+  b.redraw();
+  b.images = [imgs[3], imgs[4], imgs[5]];
+  var num = (CurSong === b) ? 1 : 0;
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+  var b = document.getElementById("1up");
+  b.redraw();
+  b.images = [imgs[6], imgs[7], imgs[8]];
+  var num = (CurSong === b) ? 1 : 0;
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+  var b = document.getElementById("eraser");
+  b.redraw();
+  b.images = [imgs[9], imgs[10], imgs[11]];
+  var num;
+  if (CurChar == 16) {
+    num = 1;
+    SCREEN.style.cursor = 'url(' + b.images[2].src + ')' + ' 0 0, auto';
+  } else {
+    num = 0;
+  }
+  b.style.backgroundImage = "url(" + b.images[num].src + ")";
+
+  var b = document.getElementById("tempo");
+  moveDOM(b, b.originalX, b.originalY);
+  resizeDOM(b, b.originalW, b.originalH);
+  var rules = PseudoSheet.cssRules;
+  for (var i = 0; i < rules.length; i++) {
+    if (rules[i].selectorText == "#tempo::-webkit-slider-thumb") {
+      PseudoSheet.deleteRule(i);
+      PseudoSheet.insertRule('#tempo::-webkit-slider-thumb {' +
+        "-webkit-appearance: none !important;" +
+        "background-image: url('" + b.image.src + "');" +
+        "background-repeat: no-repeat;" +
+        "background-size: 100% 100%;" +
+	      "border: 0px;" +
+	      "width: " + 5 * MAGNIFY + "px;" +
+	      "height:" + 8 * MAGNIFY + 'px;}', 0
+      );
+    }
+  }
 }
 
 // INIT routine
@@ -949,7 +1152,6 @@ function onload() {
   //   2nd Kinopio: X=38, y=8, width=13, height=14
   //   and so on...
   var bimgs = sliceImage(char_sheet, 16, 16);
-  delete char_sheet;
   for (var i = 0; i < 15; i++) {
     var b = makeButton((24 + 14 * i), 8, 13, 14);
     b.num = i;
@@ -963,6 +1165,7 @@ function onload() {
       drawCurChar(this.se.image);
     });
     CONSOLE.appendChild(b);
+    BUTTONS[i] = b;
   }
 
   // Prepare End Mark button (Char. No. 15)
@@ -988,16 +1191,17 @@ function onload() {
     drawEndMarkIcon(this.images[0]);
   });
   CONSOLE.appendChild(b);
+  BUTTONS[15] = b;
 
   // For inserting pseudo elements' styles
   var s = document.createElement("style");
   document.head.appendChild(s);
+  PseudoSheet = s.sheet;
 
   // Prepare Play Button (55, 168)
   var b = makeButton(55, 168, 12, 15);
   b.id = 'play';
   b.images = sliceImage(playbtnimg, 12, 15);
-  delete playbtnimg;
   b.style.backgroundImage = "url(" + b.images[0].src + ")";
   b.addEventListener("click", playListener);
   s.sheet.insertRule('#play:focus {outline: none !important;}', 0);
@@ -1010,7 +1214,6 @@ function onload() {
   // stopbtn image including loop button (next)
   var imgs = sliceImage(stopbtnimg, 16, 15);
   b.images = [imgs[0], imgs[1]];
-  delete stopbtnimg;
   b.style.backgroundImage = "url(" + b.images[1].src + ")";
   b.addEventListener("click", stopListener);
   s.sheet.insertRule('#stop:focus {outline: none !important;}', 0);
@@ -1047,7 +1250,6 @@ function onload() {
 
   // Prepare Repeat (global!)
   RepeatMarks = sliceImage(repeatimg, 13, 62);
-  delete repeatimg;
   EndMark = RepeatMarks[2];
 
   // Prepare Scroll Range
@@ -1065,10 +1267,12 @@ function onload() {
   r.style['vertical-align'] = 'middle';
   r.style.position = 'absolute';
   r.style.margin = 0;
-  r.style.left = 191 * MAGNIFY + 'px';
-  r.style.top  = 159 * MAGNIFY + 'px';
-  r.style.width = 50 * MAGNIFY + 'px';
-  r.style.height = 7 * MAGNIFY + 'px';
+  r.originalX = 191;
+  r.originalY = 159;
+  r.originalW = 50;
+  r.originalH = 7;
+  moveDOM(r, r.originalX, r.originalY);
+  resizeDOM(r, r.originalW, r.originalH);
   r.addEventListener("input", function(e) {
     CurPos = parseInt(this.value);
   });
@@ -1089,7 +1293,6 @@ function onload() {
 
   // Make number images from the number sheet
   NUMBERS = sliceImage(numimg, 5, 7);
-  delete numimg;
 
   // Prepare Beat buttons w=14, h=15 (81, 203) (96, 203)
   // (1) Disable self, Enable the other
@@ -1202,16 +1405,19 @@ function onload() {
   r.style['vertical-align'] = 'middle';
   r.style.position = 'absolute';
   r.style.margin = 0;
-  r.style.left = 116 * MAGNIFY + 'px';
-  r.style.top  = 172 * MAGNIFY + 'px';
-  r.style.width = 40 * MAGNIFY + 'px';
-  r.style.height = 8 * MAGNIFY + 'px';
+  r.originalX = 116;
+  r.originalY = 172;
+  r.originalW = 40;
+  r.originalH = 8;
+  moveDOM(r, r.originalX, r.originalY);
+  resizeDOM(r, r.originalW, r.originalH);
   r.addEventListener("input", function(e) {
     CurScore.tempo = parseInt(this.value);
   });
   CONSOLE.appendChild(r);
 
   var t = sliceImage(thumbimg, 5, 8)[0];
+  r.image = t;
   // It's very hard to set values to a pseudo element with JS.
   // http://pankajparashar.com/posts/modify-pseudo-elements-css/
   s.sheet.insertRule('#tempo::-webkit-slider-thumb {' +
@@ -1269,12 +1475,10 @@ function onload() {
 
   // Make bomb images from the bomb sheet
   BOMBS = sliceImage(bombimg, 14, 18);
-  delete bombimg;
 
   // Make Mario images
   Mario = new MarioClass();
   Mario.images = sliceImage(marioimg, 16, 22);
-  delete marioimg;
 
   // Make Semitone images
   Semitones = sliceImage(semitoneimg, 5, 12);
@@ -1287,18 +1491,11 @@ function onload() {
 
     CONSOLE.removeChild(document.getElementById("spinner"));
 
-    var prmstr = window.location.search.substr(1);
-    if (prmstr == null || prmstr == "") return;
+    if (Object.keys(OPTS).length == 0) return;
 
-    var opts = {};
-    prmstr.split('&').forEach(function (s) {
-      var tmp = s.split('=');
-      opts[tmp[0]] = tmp[1];
-    });
-
-    if (opts['url'] != undefined) {
+    if (OPTS['url'] != undefined) {
       fullInitScore();
-      var url = opts['url'];
+      var url = OPTS['url'];
       new Promise(function (resolve, reject) {
         var req = new XMLHttpRequest();
         req.open('GET', url);
@@ -1324,18 +1521,18 @@ function onload() {
         
         closing(); 
 
-        autoPlayIfDemanded(opts);
+        autoPlayIfDemanded(OPTS);
 
       }).catch(function (err) {
         alert("Downloading File: " + url + " failed :" + err);
         console.error("Downloading File: " + url + " failed :" + err.stack);
       })
-    } else if (opts.S != undefined || opts.SCORE != undefined) {
-      var score = opts.SCORE || opts.S;
-      var tempo = opts.TEMPO || opts.T;
-      var loop  = (opts.LOOP  || opts.L);
-      var end   = opts.END   || opts.E;
-      var beats = (opts.TIME44 || opts.B);
+    } else if (OPTS.S != undefined || OPTS.SCORE != undefined) {
+      var score = OPTS.SCORE || OPTS.S;
+      var tempo = OPTS.TEMPO || OPTS.T;
+      var loop  = (OPTS.LOOP  || OPTS.L);
+      var end   = OPTS.END   || OPTS.E;
+      var beats = (OPTS.TIME44 || OPTS.B);
 
       if (tempo == undefined || loop == undefined || end == undefined ||
           beats == undefined) {
@@ -1354,7 +1551,7 @@ function onload() {
       addMSQ(text);
       closing();
 
-      autoPlayIfDemanded(opts);
+      autoPlayIfDemanded(OPTS);
     }
   }).catch(function (err) {
     alert("Invalid GET parameter :" + err);
@@ -1362,6 +1559,9 @@ function onload() {
   });
 
   requestAnimFrame(doAnimation); 
+
+  var b = document.getElementById("magnify");
+  b.addEventListener("change", selectListener);
 }
 
 function autoPlayIfDemanded(opts) {
@@ -1551,7 +1751,7 @@ function sliceImage(img, width, height) {
   var imgh = img.height * MAGNIFY;
   var num = Math.floor(img.width / width);
   var all = num * Math.floor(img.height / height);
-  var charw = width  * MAGNIFY;
+  var charw = width * MAGNIFY;
   var charh = height * MAGNIFY;
 
   for (var i = 0; i < all; i++) {

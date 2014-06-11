@@ -2,15 +2,24 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <title>Mario Sequencer</title>
+<link rel="stylesheet" href="gh-fork-ribbon.css">
 <style>
 .game {
   margin:0; padding:0; border:0;
   left:0; top:0;
 }
 
+.right-bottom .github-fork-ribbon {
+  background-color: #090;
+}
 </style>
 </head>
 <body>
+<select id="magnify">
+  <option value="1">1x1</option>
+  <option value="2" selected>2x2</option>
+  <option value="3">3x3</option>
+</select>
 <div id="console"
   style="position: relative; margin:0px auto; padding:0px; border:0px;">
   <canvas id="layer1" class="game"
@@ -24,5 +33,10 @@
 <button onclick="download()">Download</button>
 </center>
 <script src="shared.js"></script>
+<div class="github-fork-ribbon-wrapper right-bottom">
+  <div class="github-fork-ribbon">
+      <a href="https://github.com/minghai/MarioSequencer">Fork me on GitHub</a>
+  </div>
+</div>
 </body>
 </html>
