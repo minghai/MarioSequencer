@@ -49,6 +49,10 @@ You can download the score file by this.
 
 You can play the music automatically by this.
 
+- ?mag="integer N > 0"
+
+If you believe "The bigger, the better", Go for it!
+
 - ?SCORE="MSQ's sore data"
 
 You can pass the score data by this.
