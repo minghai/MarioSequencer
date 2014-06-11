@@ -1558,6 +1558,32 @@ function onload() {
     console.error("Invalid GET parameter :" + err.stack);
   });
 
+  document.addEventListener('keydown',function(e) {
+    switch (e.keyCode) {
+      case 32: // space -> play/stop or restart with shift
+        var playBtn = document.getElementById('play');
+        if (playBtn.disabled == false || e.shiftKey) {
+          playListener.call(playBtn,e);
+        } else {
+          stopListener.call(document.getElementById('stop'),e);
+        }
+        e.preventDefault();
+        break;
+
+      case 37: // left -> scroll left
+        var r = document.getElementById('scroll');
+        if (r.value > 0) CurPos = --r.value;
+        e.preventDefault();
+        break;
+
+      case 39: // right -> scroll right
+        var r = document.getElementById('scroll');
+        if (r.value < CurMaxBars - 6) CurPos = ++r.value;
+        e.preventDefault();
+        break;
+    }
+  });
+
   requestAnimFrame(doAnimation);
 
   var b = document.getElementById("magnify");
