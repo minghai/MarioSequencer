@@ -28,13 +28,35 @@ Watch out, no Undo. So save many times.
 
 This web app supports both JSON score files and MSQ files for Mario Sequencer for Windows.
 Just drag and drop MSQ files, they will be concatinated, and you can save it as one JSON file.
-Plese number files such as file1.msq, file2.msq .... fileN.msq.
+Please number files such as file1.msq, file2.msq .... fileN.msq.
 (Do you know Mario Composer file format? Or can you contribute that for me? :-)
 
 If you want to change the tempo in the middle of the music, separate files,
 drag and drop all, then player will change the tempo automatically.
 
 You can use # and b for semitones. Just push Shift and Ctrl key while you left click.
+
+WEB API
+-------
+
+There's some WEB API.
+
+- ?url="json or msq file URI"
+
+You can download the score file by this.
+
+- ?auto="true or false"
+
+You can play the music automatically by this.
+
+- ?SCORE="MSQ's sore data"
+
+You can pass the score data by this.
+
+Try these links for example.
+
+  Kerby's OP theme. http://bit.ly/1iuFZs1 
+  Aunt Spoon (or Mrs.Pepper Pot) http://bit.ly/1kpLFsd
 
 License
 ------
