@@ -50,7 +50,7 @@ But I'm not responsible for anything, in any means.
 Acknowledgement
 -----
 
-- Anonymous Mario Sequencer developer
+- Anonymous Mario Sequencer developer in 2ch.
 
 - Phenix who made great music with Mario Sequencer.
 
@@ -59,7 +59,9 @@ Acknowledgement
 - Mario Composer Developer
 
   Similar Mario Paint simulator for Win and Mac
+
   Developed with Adobe Director
+
   I owed the idea of Shift and Ctrl click for semitones
 
 - it859 who made MSQ file archive
@@ -73,6 +75,7 @@ Acknowledgement
 - Simon Whiataker
 
   "Fork me on GitHub" ribbon in pure CSS. Great work!
+
   https://github.com/simonwhitaker/github-fork-ribbon-css
 
-Thank you!
+Thank you all!
