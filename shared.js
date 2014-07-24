@@ -53,11 +53,11 @@ GameStatus = 0;
 
 // shim layer with setTimeout fallback
 window.requestAnimFrame = (function(){
-return  window.requestAnimationFrame || 
-  window.webkitRequestAnimationFrame || 
-  window.mozRequestAnimationFrame    || 
-  window.oRequestAnimationFrame      || 
-  window.msRequestAnimationFrame     || 
+return  window.requestAnimationFrame ||
+  window.webkitRequestAnimationFrame ||
+  window.mozRequestAnimationFrame    ||
+  window.oRequestAnimationFrame      ||
+  window.msRequestAnimationFrame     ||
   function( callback ){
   window.setTimeout(callback, 1000 / 60);
 };
@@ -284,7 +284,7 @@ MarioClass.prototype.play = function(timeStamp) {
 
   var nextBar = (16 + 32 * (this.pos - CurPos + 1) - 8);
   if (Mario.x < 120) { // Mario still has to run
-    this.x += step; 
+    this.x += step;
     // If this step crosses the bar
     if (this.x >= nextBar) {
       this.pos++;
@@ -297,7 +297,7 @@ MarioClass.prototype.play = function(timeStamp) {
         this.x = 120;
       }
     }
-  } else if (CurPos <= CurScore.end - 6) { // Scroll 
+  } else if (CurPos <= CurScore.end - 6) { // Scroll
     this.x = 120;
     if (this.scroll < 16 && (this.scroll + step) > 16) {
       this.pos++;
@@ -350,7 +350,7 @@ MarioClass.prototype.draw = function() {
       y -= this.jump(Math.round((this.x - 8) % 32));
     }
   }
-   
+
   L2C.drawImage(this.images[state], this.x * MAGNIFY, y * MAGNIFY);
 };
 
@@ -359,7 +359,7 @@ MarioClass.prototype.leave = function(timeStamp) {
 
   var diff = timeStamp - this.start;
   if (this.scroll > 0 && this.scroll < 32) {
-    this.scroll += Math.floor(diff / 4); 
+    this.scroll += Math.floor(diff / 4);
     if (this.scroll > 32) {
       this.x += this.scroll - 32;
       this.scroll = 0;
@@ -679,7 +679,7 @@ function drawEndMarkIcon(img) {
   L1C.drawImage(img, 5 * MAGNIFY, 8 * MAGNIFY);
 }
 // Draw Eraser Icon
-// In fact, this only erases Icon 
+// In fact, this only erases Icon
 function drawEraserIcon() {
   L1C.clearRect(4 * MAGNIFY, 8 * MAGNIFY, 16 * MAGNIFY, 14 * MAGNIFY);
 }
@@ -844,7 +844,7 @@ SCREEN.addEventListener("drop", function(e) {
 });
 
 // Closing to add files to the score
-//   Configure Score parameters 
+//   Configure Score parameters
 function closing() {
   // Finally, after reducing, set parameters to Score
   var b = document.getElementById(CurScore.beats == 3 ? '3beats' : '4beats');
@@ -880,7 +880,7 @@ function addMSQ(text) {
     }
     this[k] = v;
   }, values);
-  
+
   var oldEnd = CurScore.end;
   var s = values.SCORE;
   var i = 0, count = CurScore.end;
@@ -1029,10 +1029,10 @@ function resizeScreen() {
   if (CurChar == 15)
     drawEndMarkIcon(BUTTONS[15].images[0]);
   else if (CurChar == 16)
-    drawEraserIcon(); 
+    drawEraserIcon();
   else
     drawCurChar(SOUNDS[CurChar].image);
-  
+
   var b = document.getElementById("play");
   b.redraw();
   b.images = sliceImage(playbtnimg, 12, 15);
@@ -1050,7 +1050,7 @@ function resizeScreen() {
   b.images = [imgs[2], imgs[3]]; // made in Stop button (above)
   var num = CurScore.loop ? 1 : 0;
   b.style.backgroundImage = "url(" + b.images[num].src + ")";
-  
+
   // Prepare Repeat (global!)
   RepeatMarks = sliceImage(repeatimg, 13, 62);
   EndMark = RepeatMarks[2];
@@ -1220,7 +1220,7 @@ function onload() {
   CONSOLE.appendChild(b);
 
   // Prepare Loop Button (85, 168)
-  var b = makeButton(85, 168, 16, 15); 
+  var b = makeButton(85, 168, 16, 15);
   b.id = 'loop';
   b.images = [imgs[2], imgs[3]]; // made in Stop button (above)
   b.style.backgroundImage = "url(" + b.images[0].src + ")";
@@ -1437,8 +1437,7 @@ function onload() {
   b.addEventListener("click", function (e) {
     var r = document.getElementById('scroll');
     if (r.value > 0) {
-      r.value--;
-      CurPos--;
+      CurPos = --r.value;
     }
   });
   CONSOLE.appendChild(b);
@@ -1448,8 +1447,7 @@ function onload() {
   b.addEventListener("click", function (e) {
     var r = document.getElementById('scroll');
     if (r.value < CurMaxBars - 6) {
-      r.value++;
-      CurPos++;
+      CurPos = ++r.value;
     }
   });
   CONSOLE.appendChild(b);
@@ -1518,8 +1516,8 @@ function onload() {
           addMSQ(response);
         else
           addJSON(response);
-        
-        closing(); 
+
+        closing();
 
         autoPlayIfDemanded(OPTS);
 
@@ -1558,7 +1556,33 @@ function onload() {
     console.error("Invalid GET parameter :" + err.stack);
   });
 
-  requestAnimFrame(doAnimation); 
+  document.addEventListener('keydown',function(e) {
+    switch (e.keyCode) {
+      case 32: // space -> play/stop or restart with shift
+        var playBtn = document.getElementById('play');
+        if (playBtn.disabled == false || e.shiftKey) {
+          playListener.call(playBtn,e);
+        } else {
+          stopListener.call(document.getElementById('stop'),e);
+        }
+        e.preventDefault();
+        break;
+
+      case 37: // left -> scroll left
+        var r = document.getElementById('scroll');
+        if (r.value > 0) CurPos = --r.value;
+        e.preventDefault();
+        break;
+
+      case 39: // right -> scroll right
+        var r = document.getElementById('scroll');
+        if (r.value < CurMaxBars - 6) CurPos = ++r.value;
+        e.preventDefault();
+        break;
+    }
+  });
+
+  requestAnimFrame(doAnimation);
 
   var b = document.getElementById("magnify");
   b.addEventListener("change", selectListener);
@@ -1677,7 +1701,7 @@ function doMarioLeave(timeStamp) {
     requestAnimFrame(doMarioLeave);
   } else {
     GameStatus = 0;
-    
+
     ["toLeft", "toRight", "scroll", "play", "clear", "frog", "beak", "1up"].
       map(function (id) {
         document.getElementById(id).disabled = false;
