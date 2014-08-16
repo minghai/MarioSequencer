@@ -7,6 +7,12 @@ Works only on Chrome (at least for now).
 Original software for Windows 95 by Anonymous in 2ch:
 http://www.geocities.jp/it85904/mariopaint_mariosequencer.html
 
+(News!)
+New version released.
+This time this supports one-chip HW Vocaloid Hatsune Miku and sings!
+If you have GAKKEN NSX-39, please try this version.
+http://github.com/minghai/MikuMikuSequencer
+
 How to use
 ------
 Try this link:
@@ -15,13 +21,25 @@ http://minghai.github.io/MarioSequencer/
 Also, here's GREAT music "NikoNiko suite" by Phenix.
 http://minghai.github.io/MarioSequencer/?url=NikoNiko_suite.json&auto=true
 
-Feel free to make your local clone.
-You can use this appli without internet after download them all.
-
 Basically, What you see is what you get.
+
+Select instruments with the buttons on the top of the screen.
+Most right button is not a instrument, but it is a end mark.
+If you select it, you can put the end mark on the score and
+play will stop there.
+
+After selecting the instrument, put notes on the score as you like
+by left click.
+If you need to scroll the score to left or right, use the scroll
+range object.
+
+If you want to delete the notes, select the eraser on the bottom of
+the screen, or just use right click on the target note.
 
 The "Download" button will save your music as JSON file.
 Drag and drop your file and you can play it again.
+
+You can use # and b(flat) for semitones. Just push Shift and Ctrl key while you left click.
 
 This version lacks Undo implementation.
 Watch out, no Undo. So save many times.
@@ -29,12 +47,14 @@ Watch out, no Undo. So save many times.
 This web app supports both JSON score files and MSQ files for Mario Sequencer for Windows.
 Just drag and drop MSQ files, they will be concatinated, and you can save it as one JSON file.
 Please number files such as file1.msq, file2.msq .... fileN.msq.
-(Do you know Mario Composer file format? Or can you contribute that for me? :-)
-
 If you want to change the tempo in the middle of the music, separate files,
 drag and drop all, then player will change the tempo automatically.
 
-You can use # and b for semitones. Just push Shift and Ctrl key while you left click.
+You can use this app without internet after download them all.
+I recommend you making local clone of this repository.
+
+(Do you know Mario Composer file format? Or can you contribute that for me? :-)
+
 
 WEB API
 -------
